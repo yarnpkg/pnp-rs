@@ -1,7 +1,7 @@
 mod util;
 
 use std::{path::{Path, PathBuf, Component}, fs, collections::{HashSet, HashMap}};
-use util::RegexDef;
+use crate::util::RegexDef;
 use lazy_static::lazy_static;
 use radix_trie::Trie;
 use fancy_regex::Regex;

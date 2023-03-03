@@ -1,8 +1,8 @@
-mod lib;
+mod util;
 
 use std::path::PathBuf;
 
-use lib::{pnp_resolve, PnpResolutionConfig, Resolution};
+use pnp_rs::{pnp_resolve, PnpResolutionConfig, Resolution};
 
 fn main() {
     let mut args = std::env::args();
