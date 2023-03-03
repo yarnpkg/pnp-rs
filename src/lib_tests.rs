@@ -49,7 +49,7 @@ mod tests {
                 let manifest_copy = manifest.clone();
 
                 let host = PnpResolutionHost {
-                    find_pnp_manifest: Box::new(|_| Ok(Some(manifest_copy))),
+                    find_pnp_manifest: Box::new(move |_| Ok(Some(manifest_copy.clone()))),
                     ..Default::default()
                 };
 
