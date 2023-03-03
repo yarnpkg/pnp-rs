@@ -1,8 +1,8 @@
-use std::{error::Error, path::{Path, PathBuf, Component}, fs, collections::{HashSet, HashMap}, env};
+use std::{path::{Path, PathBuf, Component}, fs, collections::{HashSet, HashMap}, env, borrow::Cow};
 use lazy_static::lazy_static;
 use radix_trie::Trie;
-use regex::Regex;
-use serde::Deserialize;
+use fancy_regex::Regex;
+use serde::{Deserialize, Deserializer};
 use serde_with::{serde_as, DefaultOnNull};
 use simple_error::{self, bail, SimpleError};
 
@@ -12,7 +12,7 @@ enum Resolution {
 }
 
 struct PnpResolutionHost {
-    find_pnp_manifest: Box<dyn Fn(&Path) -> Result<Option<Manifest>, Box<dyn Error>>>,
+    find_pnp_manifest: Box<dyn Fn(&Path) -> Result<Option<Manifest>, Box<dyn std::error::Error>>>,
 }
 
 impl Default for PnpResolutionHost {
@@ -23,19 +23,13 @@ impl Default for PnpResolutionHost {
     }
 }
 
+#[derive(Default)]
 struct PnpResolutionConfig {
     builtins: HashSet<String>,
     host: PnpResolutionHost,
 }
 
-impl Default for PnpResolutionConfig {
-    fn default() -> PnpResolutionConfig {
-        PnpResolutionConfig {
-            builtins: HashSet::new(),
-            host: Default::default(),
-        }
-    }
-}
+
 
 #[derive(Deserialize)]
 struct PackageLocator {
@@ -64,30 +58,58 @@ struct PackageInformation {
     package_dependencies: HashMap<String, Option<PackageDependency>>,
 }
 
+fn strip_slash_escape(str: &str) -> String {
+    let mut res = String::default();
+    res.reserve_exact(str.len());
+
+    let mut iter = str.chars().peekable();
+    let mut escaped = false;
+
+    while let Some(c) = iter.next() {
+        if !escaped && c == '\\' {
+            if iter.peek() == Some(&'/') {
+                continue;
+            }
+
+            escaped = true;
+        }
+
+        res.push(c);
+        escaped = false;
+    }
+
+    res
+}
+
+#[derive(Debug)]
+struct RegexDef(Regex);
+
+impl<'de> Deserialize<'de> for RegexDef {
+    fn deserialize<D>(d: D) -> Result<RegexDef, D::Error>
+    where D: Deserializer<'de>,
+    {
+        let s = <Cow<str>>::deserialize(d)?;
+
+        match strip_slash_escape(s.as_ref()).parse() {
+            Ok(regex) => Ok(RegexDef(regex)),
+            Err(err) => Err(D::Error::custom(err)),
+        }
+    }
+}
+
 #[serde_as]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Manifest {
     enable_top_level_fallback: bool,
 
-    #[serde(with = "serde_regex")]
-    ignore_pattern_data: Option<Regex>,
+    ignore_pattern_data: Option<RegexDef>,
 
     #[serde(skip_deserializing)]
     fallback_dependencies: HashMap<String, Option<PackageDependency>>,
 
     #[serde(skip_deserializing)]
     location_trie: Trie<PathBuf, PackageLocator>,
-
-    // dependencyTreeRoots: [{
-    //   name: "@app/monorepo",
-    //   reference: "workspace:.",
-    // }, {
-    //   name: "@app/website",
-    //   reference: "workspace:website",
-    // }]
-    //
-    dependency_tree_roots: Vec<PackageLocator>,
 
     // fallbackPool: [[
     //   "@app/monorepo",
@@ -149,7 +171,7 @@ fn is_path_specifier(specifier: &str) -> bool {
         static ref RE: Regex = Regex::new("^\\.{0,2}/").unwrap();
     }
 
-    RE.is_match(&specifier)
+    RE.is_match(specifier).unwrap()
 }
 
 fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>), SimpleError> {
@@ -187,7 +209,7 @@ fn find_closest_pnp_manifest_path(p: &Path) -> Option<PathBuf> {
     }
 }
 
-fn load_pnp_manifest(p: &Path) -> Result<Manifest, Box<dyn Error>> {
+fn load_pnp_manifest(p: &Path) -> Result<Manifest, Box<dyn std::error::Error>> {
     let manifest_content = fs::read_to_string(p)?;
     let manifest_dir = p.parent()
         .expect("Should have a parent directory");
@@ -196,7 +218,7 @@ fn load_pnp_manifest(p: &Path) -> Result<Manifest, Box<dyn Error>> {
         static ref RE: Regex = Regex::new("const\\s+RAW_RUNTIME_STATE\\s*=\\s*'").unwrap();
     }
 
-    let manifest_match = RE.find(&manifest_content)
+    let manifest_match = RE.find(&manifest_content)?
         .expect("Should have been able to locate the runtime state payload offset");
 
     let iter = manifest_content.chars().skip(manifest_match.end());
@@ -252,15 +274,15 @@ fn load_pnp_manifest(p: &Path) -> Result<Manifest, Box<dyn Error>> {
     Ok(manifest)
 }
 
-fn find_pnp_manifest(parent: &Path) -> Result<Option<Manifest>, Box<dyn Error>> {
-    find_closest_pnp_manifest_path(parent).map_or(Ok(None), |p| Ok(Some(load_pnp_manifest(&*p)?)))
+fn find_pnp_manifest(parent: &Path) -> Result<Option<Manifest>, Box<dyn std::error::Error>> {
+    find_closest_pnp_manifest_path(parent).map_or(Ok(None), |p| Ok(Some(load_pnp_manifest(&p)?)))
 }
 
 fn find_locator<'a>(manifest: &'a Manifest, path: &Path) -> Option<&'a PackageLocator> {
     manifest.location_trie.get_ancestor_value(path)
 }
 
-fn get_package<'a>(manifest: &'a Manifest, locator: &PackageLocator) -> Result<&'a PackageInformation, Box<dyn Error>> {
+fn get_package<'a>(manifest: &'a Manifest, locator: &PackageLocator) -> Result<&'a PackageInformation, Box<dyn std::error::Error>> {
     let references = manifest.package_registry_data.get(&locator.name)
         .expect("Should have an entry in the package registry");
 
@@ -278,24 +300,24 @@ fn is_excluded_from_fallback(manifest: &Manifest, locator: &PackageLocator) -> b
     }
 }
 
-fn pnp_resolve(specifier: &str, parent: &Path, config: &PnpResolutionConfig) -> Result<Resolution, Box<dyn Error>> {
-    if is_builtin(&specifier, &config) {
+fn pnp_resolve(specifier: &str, parent: &Path, config: &PnpResolutionConfig) -> Result<Resolution, Box<dyn std::error::Error>> {
+    if is_builtin(specifier, config) {
         return Ok(Resolution::Specifier(specifier.to_string()))
     }
 
-    if is_path_specifier(&specifier) {
+    if is_path_specifier(specifier) {
         return Ok(Resolution::Specifier(specifier.to_string()))
     }
 
-    resolve_to_unqualified(&specifier, &parent, config)
+    resolve_to_unqualified(specifier, parent, config)
 }
 
-fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &PnpResolutionConfig) -> Result<Resolution, Box<dyn Error>> {
+fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &PnpResolutionConfig) -> Result<Resolution, Box<dyn std::error::Error>> {
     let (ident, module_path) = parse_bare_identifier(specifier)?;
 
     if let Some(manifest) = (config.host.find_pnp_manifest)(parent)? {
         if let Some(parent_locator) = find_locator(&manifest, parent) {
-            let parent_pkg = get_package(&manifest, &parent_locator)?;
+            let parent_pkg = get_package(&manifest, parent_locator)?;
 
             let mut reference_or_alias: Option<PackageDependency> = None;
             let mut is_set = false;
@@ -307,14 +329,10 @@ fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &PnpResolution
                 }
             }
 
-            if !is_set {
-                if manifest.enable_top_level_fallback {
-                    if !is_excluded_from_fallback(&manifest, &parent_locator) {
-                        if let Some(fallback_resolution) = manifest.fallback_dependencies.get(&ident) {
-                            reference_or_alias = fallback_resolution.clone();
-                            is_set = true;
-                        }
-                    }
+            if !is_set && manifest.enable_top_level_fallback && !is_excluded_from_fallback(&manifest, parent_locator) {
+                if let Some(fallback_resolution) = manifest.fallback_dependencies.get(&ident) {
+                    reference_or_alias = fallback_resolution.clone();
+                    is_set = true;
                 }
             }
 
@@ -324,9 +342,8 @@ fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &PnpResolution
 
             if let Some(resolution) = reference_or_alias {
                 let dependency_pkg = match resolution {
-                    PackageDependency::Reference(reference) => get_package(&manifest, &PackageLocator { name: ident, reference: reference.clone() }),
-                    PackageDependency::Alias(name, reference) => get_package(&manifest, &PackageLocator { name: name.clone(), reference: reference.clone() }),
-                    _ => bail!("Invalid amount of elements"),
+                    PackageDependency::Reference(reference) => get_package(&manifest, &PackageLocator { name: ident, reference }),
+                    PackageDependency::Alias(name, reference) => get_package(&manifest, &PackageLocator { name, reference }),
                 }?;
 
                 let final_path = dependency_pkg.package_location
@@ -354,7 +371,7 @@ fn main() {
         .expect("A specifier must be provided");
 
     let parent = args.next()
-        .map(|p| PathBuf::from(p))
+        .map(PathBuf::from)
         .expect("A parent url must be provided");
 
     println!("specifier = {}", specifier);
