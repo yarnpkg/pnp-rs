@@ -1,10 +1,9 @@
-use std::{error::Error, path::{Path, PathBuf}, fs, collections::{HashSet, HashMap}, env};
+use std::{error::Error, path::{Path, PathBuf, Component}, fs, collections::{HashSet, HashMap}, env};
 use lazy_static::lazy_static;
 use radix_trie::Trie;
 use regex::Regex;
 use serde::Deserialize;
-use serde::Deserializer;
-use serde_with::{serde_as, DeserializeAs, de::DeserializeAsWrap, OneOrMany};
+use serde_with::{serde_as, DefaultOnNull};
 use simple_error::{self, bail, SimpleError};
 
 enum Resolution {
@@ -13,17 +12,43 @@ enum Resolution {
 }
 
 struct PnpResolutionHost {
-//    find_pnp_manifest: Box<dyn FnMut()>,
+    find_pnp_manifest: Box<dyn Fn(&Path) -> Result<Option<Manifest>, Box<dyn Error>>>,
+}
+
+impl Default for PnpResolutionHost {
+    fn default() -> PnpResolutionHost {
+        PnpResolutionHost {
+            find_pnp_manifest: Box::new(find_pnp_manifest),
+        }
+    }
 }
 
 struct PnpResolutionConfig {
+    builtins: HashSet<String>,
     host: PnpResolutionHost,
+}
+
+impl Default for PnpResolutionConfig {
+    fn default() -> PnpResolutionConfig {
+        PnpResolutionConfig {
+            builtins: HashSet::new(),
+            host: Default::default(),
+        }
+    }
 }
 
 #[derive(Deserialize)]
 struct PackageLocator {
     name: String,
     reference: String,
+}
+
+#[derive(Clone)]
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum PackageDependency {
+    Reference(String),
+    Alias(String, String),
 }
 
 #[serde_as]
@@ -35,14 +60,8 @@ struct PackageInformation {
     #[serde(default)]
     discard_from_lookup: bool,
 
-    #[serde_as(as = "Vec<(_, Option<OneOrMany<_>>)>")]
-    package_dependencies: HashMap<String, Option<Vec<String>>>,
-}
-
-fn deserialize_maybe_null_string<'de, D>(deserializer: D) -> Result<String, D::Error> where D: Deserializer<'de> {
-    let buf = String::deserialize(deserializer)?;
-
-    Ok(buf)
+    #[serde_as(as = "Vec<(_, Option<_>)>")]
+    package_dependencies: HashMap<String, Option<PackageDependency>>,
 }
 
 #[serde_as]
@@ -53,6 +72,9 @@ struct Manifest {
 
     #[serde(with = "serde_regex")]
     ignore_pattern_data: Option<Regex>,
+
+    #[serde(skip_deserializing)]
+    fallback_dependencies: HashMap<String, Option<PackageDependency>>,
 
     #[serde(skip_deserializing)]
     location_trie: Trie<PathBuf, PackageLocator>,
@@ -87,15 +109,42 @@ struct Manifest {
     //     }]
     //   }]
     // ]
-    #[serde_as(as = "Vec<(_, Vec<(_, _)>)>")]
+    #[serde_as(as = "Vec<(DefaultOnNull<_>, Vec<(DefaultOnNull<_>, _)>)>")]
     package_registry_data: HashMap<String, HashMap<String, PackageInformation>>,
 }
 
-fn is_node_builtin(specifier: &String) -> bool {
-    specifier.starts_with("node:")
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut components = path.components().peekable();
+    let mut ret = if let Some(c @ Component::Prefix(..)) = components.peek().cloned() {
+        components.next();
+        PathBuf::from(c.as_os_str())
+    } else {
+        PathBuf::new()
+    };
+
+    for component in components {
+        match component {
+            Component::Prefix(..) => unreachable!(),
+            Component::RootDir => {
+                ret.push(component.as_os_str());
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                ret.pop();
+            }
+            Component::Normal(c) => {
+                ret.push(c);
+            }
+        }
+    }
+    ret
 }
 
-fn is_path_specifier(specifier: &String) -> bool {
+fn is_builtin(specifier: &str, config: &PnpResolutionConfig) -> bool {
+    config.builtins.contains(specifier)
+}
+
+fn is_path_specifier(specifier: &str) -> bool {
     lazy_static! {
         static ref RE: Regex = Regex::new("^\\.{0,2}/").unwrap();
     }
@@ -103,7 +152,7 @@ fn is_path_specifier(specifier: &String) -> bool {
     RE.is_match(&specifier)
 }
 
-fn parse_bare_identifier(specifier: &String) -> Result<(String, Option<String>), SimpleError> {
+fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>), SimpleError> {
     let mut segments = specifier.splitn(3, '/');
     let mut ident_option: Option<String> = None;
 
@@ -171,14 +220,27 @@ fn load_pnp_manifest(p: &Path) -> Result<Manifest, Box<dyn Error>> {
 
     let mut manifest: Manifest = serde_json::from_str(&json_string.to_owned())?;
 
+    for locator in manifest.fallback_pool.iter() {
+        let info = manifest.package_registry_data
+            .get(&locator.name)
+                .expect("Assertion failed: The locator should be registered")
+            .get(&locator.reference)
+                .expect("Assertion failed: The locator should be registered");
+
+        for (name, dependency) in info.package_dependencies.iter() {
+            manifest.fallback_dependencies.insert(name.clone(), dependency.clone());
+        }
+    }
+
     for (name, ranges) in manifest.package_registry_data.iter_mut() {
         for (reference, info) in ranges.iter_mut() {
             if info.discard_from_lookup {
                 continue;
             }
 
-            info.package_location = manifest_dir
-                .join(info.package_location.clone());
+            info.package_location = normalize_path(manifest_dir
+                .join(info.package_location.clone())
+                .as_path());
 
             manifest.location_trie.insert(info.package_location.clone(), PackageLocator {
                 name: name.clone(),
@@ -216,30 +278,26 @@ fn is_excluded_from_fallback(manifest: &Manifest, locator: &PackageLocator) -> b
     }
 }
 
-fn pnp_resolve(specifier: &String, parent: &Path, config: &PnpResolutionConfig) -> Result<Resolution, Box<dyn Error>> {
-    if is_node_builtin(&specifier) {
-        return Ok(Resolution::Specifier(specifier.clone()))
+fn pnp_resolve(specifier: &str, parent: &Path, config: &PnpResolutionConfig) -> Result<Resolution, Box<dyn Error>> {
+    if is_builtin(&specifier, &config) {
+        return Ok(Resolution::Specifier(specifier.to_string()))
     }
 
     if is_path_specifier(&specifier) {
-        return Ok(Resolution::Specifier(specifier.clone()))
+        return Ok(Resolution::Specifier(specifier.to_string()))
     }
 
     resolve_to_unqualified(&specifier, &parent, config)
 }
 
-fn get_dependency_from_fallback(manifest: &Manifest, ident: &String) -> Option<Vec<String>> {
-    None
-}
-
-fn resolve_to_unqualified(specifier: &String, parent: &Path, config: &PnpResolutionConfig) -> Result<Resolution, Box<dyn Error>> {
+fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &PnpResolutionConfig) -> Result<Resolution, Box<dyn Error>> {
     let (ident, module_path) = parse_bare_identifier(specifier)?;
 
-    if let Some(manifest) = find_pnp_manifest(parent)? {
+    if let Some(manifest) = (config.host.find_pnp_manifest)(parent)? {
         if let Some(parent_locator) = find_locator(&manifest, parent) {
             let parent_pkg = get_package(&manifest, &parent_locator)?;
 
-            let mut reference_or_alias: Option<Vec<String>> = None;
+            let mut reference_or_alias: Option<PackageDependency> = None;
             let mut is_set = false;
             
             if !is_set {
@@ -252,8 +310,8 @@ fn resolve_to_unqualified(specifier: &String, parent: &Path, config: &PnpResolut
             if !is_set {
                 if manifest.enable_top_level_fallback {
                     if !is_excluded_from_fallback(&manifest, &parent_locator) {
-                        if let Some(fallback_resolution) = get_dependency_from_fallback(&manifest, &ident) {
-                            reference_or_alias = Some(fallback_resolution);
+                        if let Some(fallback_resolution) = manifest.fallback_dependencies.get(&ident) {
+                            reference_or_alias = fallback_resolution.clone();
                             is_set = true;
                         }
                     }
@@ -265,9 +323,9 @@ fn resolve_to_unqualified(specifier: &String, parent: &Path, config: &PnpResolut
             }
 
             if let Some(resolution) = reference_or_alias {
-                let dependency_pkg = match resolution.as_slice() {
-                    [reference] => get_package(&manifest, &PackageLocator { name: ident, reference: reference.clone() }),
-                    [name, reference] => get_package(&manifest, &PackageLocator { name: name.clone(), reference: reference.clone() }),
+                let dependency_pkg = match resolution {
+                    PackageDependency::Reference(reference) => get_package(&manifest, &PackageLocator { name: ident, reference: reference.clone() }),
+                    PackageDependency::Alias(name, reference) => get_package(&manifest, &PackageLocator { name: name.clone(), reference: reference.clone() }),
                     _ => bail!("Invalid amount of elements"),
                 }?;
 
@@ -279,10 +337,10 @@ fn resolve_to_unqualified(specifier: &String, parent: &Path, config: &PnpResolut
                 bail!("Resolution failed: Unsatisfied peer dependency");
             }
         } else {
-            Ok(Resolution::Specifier(specifier.clone()))
+            Ok(Resolution::Specifier(specifier.to_string()))
         }
     } else {
-        Ok(Resolution::Specifier(specifier.clone()))
+        Ok(Resolution::Specifier(specifier.to_string()))
     }
 }
 
@@ -303,8 +361,7 @@ fn main() {
     println!("parent    = {:?}", parent);
 
     let resolution = pnp_resolve(&specifier, &parent, &PnpResolutionConfig {
-        host: PnpResolutionHost {
-        },
+        ..Default::default()
     });
 
     match resolution {
