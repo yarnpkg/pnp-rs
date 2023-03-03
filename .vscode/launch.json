@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [{
+    "type": "lldb",
+    "request": "launch",
+    "name": "Debug executable 'esfuse-pnp'",
+    "cargo": {
+      "args": [
+        "build",
+        "--bin=esfuse-pnp",
+        "--package=esfuse-pnp"
+      ],
+      "filter": {
+        "name": "esfuse-pnp",
+        "kind": "bin"
+      }
+    },
+    "args": ["typescript", "/Users/mael.nison/berry/package.json"],
+    "cwd": "${workspaceFolder}"
+  }]
+}
