@@ -1,13 +1,13 @@
 mod util;
 
-use std::{path::{Path, PathBuf, Component}, fs, collections::{HashSet, HashMap}};
-use crate::util::RegexDef;
+use fancy_regex::Regex;
 use lazy_static::lazy_static;
 use radix_trie::Trie;
-use fancy_regex::Regex;
 use serde::Deserialize;
 use serde_with::{serde_as, DefaultOnNull};
 use simple_error::{self, bail, SimpleError};
+use std::{path::{Path, PathBuf, Component}, fs, collections::{HashSet, HashMap}};
+use util::RegexDef;
 
 pub enum Resolution {
     Specifier(String),
@@ -32,6 +32,7 @@ pub struct PnpResolutionConfig {
     pub host: PnpResolutionHost,
 }
 
+#[derive(Clone)]
 #[derive(Deserialize)]
 pub struct PackageLocator {
     name: String,
@@ -47,6 +48,7 @@ enum PackageDependency {
 }
 
 #[serde_as]
+#[derive(Clone)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageInformation {
@@ -60,14 +62,12 @@ pub struct PackageInformation {
 }
 
 #[serde_as]
+#[derive(Clone)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     #[serde(skip_deserializing)]
     manifest_path: PathBuf,
-
-    #[serde(skip_deserializing)]
-    fallback_dependencies: HashMap<String, Option<PackageDependency>>,
 
     #[serde(skip_deserializing)]
     location_trie: Trie<PathBuf, PackageLocator>,
@@ -79,7 +79,8 @@ pub struct Manifest {
     //   "@app/monorepo",
     //   "workspace:.",
     // ]]
-    fallback_pool: Vec<PackageLocator>,
+    #[serde_as(as = "Vec<(_, _)>")]
+    fallback_pool: HashMap<String, Option<PackageDependency>>,
 
     // fallbackExclusionList: [[
     //   "@app/server",
@@ -214,18 +215,6 @@ pub fn init_pnp_manifest(manifest: &mut Manifest, p: &Path) {
 
     manifest.manifest_path = p.to_owned();
 
-    for locator in manifest.fallback_pool.iter() {
-        let info = manifest.package_registry_data
-            .get(&locator.name)
-                .expect("Assertion failed: The locator should be registered")
-            .get(&locator.reference)
-                .expect("Assertion failed: The locator should be registered");
-
-        for (name, dependency) in info.package_dependencies.iter() {
-            manifest.fallback_dependencies.insert(name.clone(), dependency.clone());
-        }
-    }
-
     for (name, ranges) in manifest.package_registry_data.iter_mut() {
         for (reference, info) in ranges.iter_mut() {
             if info.discard_from_lookup {
@@ -309,7 +298,7 @@ pub fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &PnpResolu
             }
 
             if !is_set && manifest.enable_top_level_fallback && !is_excluded_from_fallback(&manifest, parent_locator) {
-                if let Some(fallback_resolution) = manifest.fallback_dependencies.get(&ident) {
+                if let Some(fallback_resolution) = manifest.fallback_pool.get(&ident) {
                     reference_or_alias = fallback_resolution.clone();
                     is_set = true;
                 }
@@ -339,3 +328,6 @@ pub fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &PnpResolu
         Ok(Resolution::Specifier(specifier.to_string()))
     }
 }
+
+#[cfg(test)]
+mod lib_tests;

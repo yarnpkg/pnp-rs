@@ -1,5 +1,3 @@
-mod util;
-
 use std::path::PathBuf;
 
 use pnp_rs::{pnp_resolve, PnpResolutionConfig, Resolution};

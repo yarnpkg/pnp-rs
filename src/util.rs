@@ -26,6 +26,7 @@ fn strip_slash_escape(str: &str) -> String {
     res
 }
 
+#[derive(Clone)]
 pub struct RegexDef(pub Regex);
 
 impl<'de> Deserialize<'de> for RegexDef {
