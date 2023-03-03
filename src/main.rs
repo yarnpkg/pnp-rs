@@ -2,7 +2,7 @@ use std::{path::{Path, PathBuf, Component}, fs, collections::{HashSet, HashMap},
 use lazy_static::lazy_static;
 use radix_trie::Trie;
 use fancy_regex::Regex;
-use serde::{Deserialize, Deserializer};
+use serde::{de::Error, Deserialize, Deserializer};
 use serde_with::{serde_as, DefaultOnNull};
 use simple_error::{self, bail, SimpleError};
 
