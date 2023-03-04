@@ -67,8 +67,8 @@ mod tests {
                     Ok(Resolution::Specifier(specifier)) => {
                         assert_eq!(specifier, test.expected);
                     },
-                    Err(_) => {
-                        assert_eq!(test.expected, "error!");
+                    Err(err) => {
+                        assert_eq!(test.expected, "error!", "{}: {}", test.it, err);
                     },
                 }
                 

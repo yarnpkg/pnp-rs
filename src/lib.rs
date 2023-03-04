@@ -6,7 +6,7 @@ use radix_trie::Trie;
 use serde::Deserialize;
 use serde_with::{serde_as, DefaultOnNull};
 use simple_error::{self, bail, SimpleError};
-use std::{path::{Path, PathBuf, Component}, fs, collections::{HashSet, HashMap}};
+use std::{path::{Path, PathBuf, Component}, fs, collections::{HashSet, HashMap, hash_map::Entry}};
 use util::RegexDef;
 
 pub enum Resolution {
@@ -231,6 +231,16 @@ pub fn init_pnp_manifest(manifest: &mut Manifest, p: &Path) {
             });
         }
     }
+
+    let top_level_pkg = manifest.package_registry_data
+        .get("").expect("Assertion failed: Should have a top-level name key")
+        .get("").expect("Assertion failed: Should have a top-level range key");
+
+    for (name, dependency) in &top_level_pkg.package_dependencies {
+        if let Entry::Vacant(entry) = manifest.fallback_pool.entry(name.clone()) {
+            entry.insert(dependency.clone());
+        }
+    }
 }
 
 pub fn find_pnp_manifest(parent: &Path) -> Result<Option<Manifest>, Box<dyn std::error::Error>> {
@@ -291,8 +301,8 @@ pub fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &PnpResolu
             let mut is_set = false;
             
             if !is_set {
-                if let Some(binding) = parent_pkg.package_dependencies.get(&ident) {
-                    reference_or_alias = binding.clone();
+                if let Some(Some(binding)) = parent_pkg.package_dependencies.get(&ident) {
+                    reference_or_alias = Some(binding.clone());
                     is_set = true;
                 }
             }
