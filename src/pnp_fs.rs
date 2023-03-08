@@ -4,7 +4,7 @@ use lru::LruCache;
 use regex::bytes::Regex;
 use serde::Deserialize;
 use simple_error::bail;
-use zip::ZipArchive;
+use zip::{ZipArchive, read::ZipFile};
 use std::{path::{Path, PathBuf}, os::{unix::prelude::OsStrExt, macos::fs::MetadataExt}, fs, io::{BufReader}, collections::{HashSet, HashMap}};
 
 use crate::util;
@@ -34,14 +34,14 @@ pub fn mode_to_file_type(mode: u32) -> FileType {
 }
 
 
-pub struct Zip {
+pub struct Zip<'a> {
     archive: ZipArchive<BufReader<fs::File>>,
-    files: HashMap<String, ()>,
+    files: HashMap<String, ZipFile<'a>>,
     dirs: HashSet<String>,
 }
 
-impl Zip {
-    fn new(archive: ZipArchive<BufReader<fs::File>>) -> Result<Zip, Error> {
+impl<'a> Zip<'a> {
+    fn new(archive: ZipArchive<BufReader<fs::File>>) -> Result<Zip<'a>, Error> {
         let mut zip = Zip {
             archive,
             files: Default::default(),
@@ -71,7 +71,7 @@ impl Zip {
             if entry.is_dir() {
                 zip.dirs.insert(name);
             } else if entry.is_file() {
-                zip.files.insert(name, {});
+                zip.files.insert(name, entry);
             }
         }
 
@@ -91,8 +91,8 @@ pub trait ZipCache {
     fn act<T, F : FnOnce(&Zip) -> T>(&mut self, p: &Path, cb: F) -> Result<T, &Error>;
 }
 
-pub struct LruZipCache {
-    lru: LruCache<PathBuf, Result<Zip, Error>>,
+pub struct LruZipCache<'a> {
+    lru: LruCache<PathBuf, Result<Zip<'a>, Error>>,
 }
 
 pub fn open_zip(p: &Path) -> Result<Zip, Error> {
@@ -105,7 +105,7 @@ pub fn open_zip(p: &Path) -> Result<Zip, Error> {
     Ok(zip)
 }
 
-impl ZipCache for LruZipCache {
+impl<'a> ZipCache for LruZipCache<'a> {
     fn act<T, F : FnOnce(&Zip) -> T>(&mut self, p: &Path, cb: F) -> Result<T, &Error> {
         let res = self.lru.get_or_insert(p.to_owned(), || {
             open_zip(p)
