@@ -33,26 +33,23 @@ pub fn mode_to_file_type(mode: u32) -> FileType {
     }
 }
 
-struct ZipEntry {
-    start: usize,
-    end: usize,
-    inflated_size: usize,
-}
 
 pub struct Zip {
-    files: HashMap<String, ZipEntry>,
+    archive: ZipArchive<BufReader<fs::File>>,
+    files: HashMap<String, ()>,
     dirs: HashSet<String>,
 }
 
 impl Zip {
-    fn new(archive: &mut ZipArchive<BufReader<fs::File>>) -> Result<Zip, Error> {
+    fn new(archive: ZipArchive<BufReader<fs::File>>) -> Result<Zip, Error> {
         let mut zip = Zip {
+            archive,
             files: Default::default(),
             dirs: Default::default(),
         };
 
-        for i in 0..archive.len() {
-            let entry = archive.by_index_raw(i)?;
+        for i in 0..zip.archive.len() {
+            let entry = zip.archive.by_index_raw(i)?;
 
             match entry.compression() {
                 zip::CompressionMethod::DEFLATE => {}
@@ -74,11 +71,7 @@ impl Zip {
             if entry.is_dir() {
                 zip.dirs.insert(name);
             } else if entry.is_file() {
-                zip.files.insert(name, ZipEntry {
-                    start: entry.data_start() as usize,
-                    end: (entry.data_start() + entry.compressed_size()) as usize,
-                    inflated_size: entry.size() as usize,
-                });
+                zip.files.insert(name, {});
             }
         }
 
@@ -106,8 +99,8 @@ pub fn open_zip(p: &Path) -> Result<Zip, Error> {
     let file = fs::File::open(p)?;
     let reader = BufReader::new(file);
 
-    let mut archive = ZipArchive::new(reader)?;
-    let zip = Zip::new(&mut archive)?;
+    let archive = ZipArchive::new(reader)?;
+    let zip = Zip::new(archive)?;
 
     Ok(zip)
 }
