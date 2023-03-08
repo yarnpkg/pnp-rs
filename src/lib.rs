@@ -1,3 +1,4 @@
+mod pnp_fs;
 mod util;
 
 use fancy_regex::Regex;
@@ -6,7 +7,7 @@ use radix_trie::Trie;
 use serde::Deserialize;
 use serde_with::{serde_as, DefaultOnNull};
 use simple_error::{self, bail, SimpleError};
-use std::{path::{Path, PathBuf, Component}, fs, collections::{HashSet, HashMap, hash_map::Entry}};
+use std::{path::{Path, PathBuf}, fs, collections::{HashSet, HashMap, hash_map::Entry}};
 use util::RegexDef;
 
 pub enum Resolution {
@@ -52,7 +53,7 @@ enum PackageDependency {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageInformation {
-    package_location: PathBuf,
+    package_location: String,
 
     #[serde(default)]
     discard_from_lookup: bool,
@@ -67,10 +68,10 @@ pub struct PackageInformation {
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     #[serde(skip_deserializing)]
-    manifest_path: PathBuf,
+    manifest_dir: PathBuf,
 
     #[serde(skip_deserializing)]
-    location_trie: Trie<PathBuf, PackageLocator>,
+    location_trie: Trie<String, PackageLocator>,
 
     enable_top_level_fallback: bool,
     ignore_pattern_data: Option<RegexDef>,
@@ -98,33 +99,6 @@ pub struct Manifest {
     // ]
     #[serde_as(as = "Vec<(DefaultOnNull<_>, Vec<(DefaultOnNull<_>, _)>)>")]
     package_registry_data: HashMap<String, HashMap<String, PackageInformation>>,
-}
-
-fn normalize_path(path: &Path) -> PathBuf {
-    let mut components = path.components().peekable();
-    let mut ret = if let Some(c @ Component::Prefix(..)) = components.peek().cloned() {
-        components.next();
-        PathBuf::from(c.as_os_str())
-    } else {
-        PathBuf::new()
-    };
-
-    for component in components {
-        match component {
-            Component::Prefix(..) => unreachable!(),
-            Component::RootDir => {
-                ret.push(component.as_os_str());
-            }
-            Component::CurDir => {}
-            Component::ParentDir => {
-                ret.pop();
-            }
-            Component::Normal(c) => {
-                ret.push(c);
-            }
-        }
-    }
-    ret
 }
 
 pub fn is_builtin(specifier: &str, config: &PnpResolutionConfig) -> bool {
@@ -210,10 +184,9 @@ pub fn load_pnp_manifest(p: &Path) -> Result<Manifest, Box<dyn std::error::Error
 }
 
 pub fn init_pnp_manifest(manifest: &mut Manifest, p: &Path) {
-    let manifest_dir = p.parent()
-        .expect("Should have a parent directory");
-
-    manifest.manifest_path = p.to_owned();
+    manifest.manifest_dir = p.parent()
+        .expect("Should have a parent directory")
+        .to_owned();
 
     for (name, ranges) in manifest.package_registry_data.iter_mut() {
         for (reference, info) in ranges.iter_mut() {
@@ -221,9 +194,12 @@ pub fn init_pnp_manifest(manifest: &mut Manifest, p: &Path) {
                 continue;
             }
 
-            info.package_location = normalize_path(manifest_dir
-                .join(info.package_location.clone())
-                .as_path());
+            let p = manifest.manifest_dir
+                .join(info.package_location.clone());
+
+            info.package_location = util::normalize_path(
+                p.to_string_lossy(),
+            );
 
             manifest.location_trie.insert(info.package_location.clone(), PackageLocator {
                 name: name.clone(),
@@ -248,16 +224,20 @@ pub fn find_pnp_manifest(parent: &Path) -> Result<Option<Manifest>, Box<dyn std:
 }
 
 pub fn find_locator<'a>(manifest: &'a Manifest, path: &Path) -> Option<&'a PackageLocator> {
-    let relative_path = pathdiff::diff_paths(path, &manifest.manifest_path)
-        .map_or(String::from("."), |p| p.to_string_lossy().to_string());
+    let rel_path = pathdiff::diff_paths(path, &manifest.manifest_dir)
+        .expect("Assertion failed: Provided path should be absolute");
 
     if let Some(regex) = &manifest.ignore_pattern_data {
-        if regex.0.is_match(&relative_path).unwrap() {
+        if regex.0.is_match(&util::normalize_path(rel_path.to_string_lossy())).unwrap() {
             return None
         }
     }
 
-    manifest.location_trie.get_ancestor_value(path)
+    let trie_key = util::normalize_path(
+        path.to_string_lossy(),
+    );
+
+    manifest.location_trie.get_ancestor_value(&trie_key)
 }
 
 pub fn get_package<'a>(manifest: &'a Manifest, locator: &PackageLocator) -> Result<&'a PackageInformation, Box<dyn std::error::Error>> {
@@ -324,10 +304,10 @@ pub fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &PnpResolu
                     PackageDependency::Alias(name, reference) => get_package(&manifest, &PackageLocator { name, reference }),
                 }?;
 
-                let final_path = dependency_pkg.package_location
-                    .join(module_path.unwrap_or_default());
+                let joined_path = dependency_pkg.package_location.clone() + &module_path.unwrap_or_default();
+                let normalized_path = util::normalize_path(joined_path);
 
-                Ok(Resolution::Path(final_path))
+                Ok(Resolution::Path(PathBuf::from(normalized_path)))
             } else {
                 bail!("Resolution failed: Unsatisfied peer dependency");
             }

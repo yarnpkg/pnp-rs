@@ -306,6 +306,6 @@
     "it": "shouldn't go through PnP when trying to resolve dependencies from packages covered by ignorePatternData",
     "imported": "test",
     "importer": "/path/to/project/not-a-workspace/",
-    "expected": "error!"
+    "expected": "test"
   }]
 }]

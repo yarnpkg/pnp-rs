@@ -1,7 +1,6 @@
 use serde::Deserialize;
 
-use crate::{pnp_resolve, PnpResolutionConfig, Resolution, Manifest};
-
+use crate::{PnpResolutionConfig, Resolution, Manifest};
 
 #[derive(Deserialize)]
 struct Test {
@@ -27,7 +26,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_add() {
+    fn test_resolve_unqualified() {
         let expectations_path = std::env::current_dir()
             .expect("Assertion failed: Expected a valid current working directory")
             .join("testExpectations.json");
@@ -62,10 +61,10 @@ mod tests {
 
                 match resolution {
                     Ok(Resolution::Path(path)) => {
-                        assert_eq!(path.to_string_lossy(), test.expected);
+                        assert_eq!(path.to_string_lossy(), test.expected, "{}", test.it);
                     },
                     Ok(Resolution::Specifier(specifier)) => {
-                        assert_eq!(specifier, test.expected);
+                        assert_eq!(specifier, test.expected, "{}", test.it);
                     },
                     Err(err) => {
                         assert_eq!(test.expected, "error!", "{}: {}", test.it, err);
