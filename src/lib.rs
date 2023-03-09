@@ -29,7 +29,7 @@ pub enum Error {
 
 pub enum Resolution {
     Specifier(String),
-    Path(PathBuf),
+    Package(PathBuf, Option<String>),
 }
 
 pub struct ResolutionHost {
@@ -116,18 +116,6 @@ pub struct Manifest {
     // ]
     #[serde_as(as = "Vec<(DefaultOnNull<_>, Vec<(DefaultOnNull<_>, _)>)>")]
     package_registry_data: HashMap<String, HashMap<String, PackageInformation>>,
-}
-
-pub fn is_builtin(specifier: &str, config: &ResolutionConfig) -> bool {
-    config.builtins.contains(specifier)
-}
-
-pub fn is_path_specifier(specifier: &str) -> bool {
-    lazy_static! {
-        static ref RE: Regex = Regex::new("^\\.{0,2}/").unwrap();
-    }
-
-    RE.is_match(specifier).unwrap()
 }
 
 pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>), Error> {
@@ -275,18 +263,6 @@ pub fn is_excluded_from_fallback(manifest: &Manifest, locator: &PackageLocator) 
     }
 }
 
-pub fn pnp_resolve(specifier: &str, parent: &Path, config: &ResolutionConfig) -> Result<Resolution, Error> {
-    if is_builtin(specifier, config) {
-        return Ok(Resolution::Specifier(specifier.to_string()))
-    }
-
-    if is_path_specifier(specifier) {
-        return Ok(Resolution::Specifier(specifier.to_string()))
-    }
-
-    resolve_to_unqualified(specifier, parent, config)
-}
-
 pub fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &ResolutionConfig) -> Result<Resolution, Error> {
     let (ident, module_path) = parse_bare_identifier(specifier)?;
 
@@ -321,10 +297,7 @@ pub fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &Resolutio
                     PackageDependency::Alias(name, reference) => get_package(&manifest, &PackageLocator { name, reference }),
                 }?;
 
-                let joined_path = dependency_pkg.package_location.clone() + &module_path.unwrap_or_default();
-                let normalized_path = util::normalize_path(joined_path);
-
-                Ok(Resolution::Path(PathBuf::from(normalized_path)))
+                Ok(Resolution::Package(PathBuf::from(dependency_pkg.package_location.clone()), module_path.clone()))
             } else {
                 return Err(Error::FailedResolution);
             }

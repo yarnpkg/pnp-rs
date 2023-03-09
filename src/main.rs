@@ -1,4 +1,4 @@
-use pnp_rs::{pnp_resolve, ResolutionConfig, Resolution};
+use pnp::{ResolutionConfig, Resolution};
 use std::path::PathBuf;
 
 fn main() {
@@ -17,15 +17,15 @@ fn main() {
     println!("specifier = {}", specifier);
     println!("parent    = {:?}", parent);
 
-    let resolution = pnp_resolve(&specifier, &parent, &ResolutionConfig {
+    let resolution = pnp::resolve_to_unqualified(&specifier, &parent, &ResolutionConfig {
         ..Default::default()
     });
 
     match resolution {
         Ok(res) => {
             match res {
-                Resolution::Path(p) => {
-                    println!("result    = Path ({:?})", p);
+                Resolution::Package(p, subpath) => {
+                    println!("result    = Package ({:?}, {:?})", p, subpath);
                 }
                 Resolution::Specifier(specifier) => {
                     println!("result    = Specifier ({})", specifier);

@@ -58,7 +58,7 @@ mod tests {
                 let resolution = resolve_to_unqualified(specifier, parent, &config);
 
                 match resolution {
-                    Ok(Resolution::Path(path)) => {
+                    Ok(Resolution::Package(path, _subpath)) => {
                         assert_eq!(path.to_string_lossy(), test.expected, "{}", test.it);
                     },
                     Ok(Resolution::Specifier(specifier)) => {
