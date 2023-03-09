@@ -1,4 +1,4 @@
-mod pnp_fs;
+pub mod fs;
 mod util;
 
 use fancy_regex::Regex;
@@ -6,31 +6,48 @@ use lazy_static::lazy_static;
 use radix_trie::Trie;
 use serde::Deserialize;
 use serde_with::{serde_as, DefaultOnNull};
-use simple_error::{self, bail, SimpleError};
-use std::{path::{Path, PathBuf}, fs, collections::{HashSet, HashMap, hash_map::Entry}};
+use std::{path::{Path, PathBuf}, collections::{HashSet, HashMap, hash_map::Entry}};
 use util::RegexDef;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Bad specifier")]
+    BadSpecifier,
+
+    #[error("Bad specifier")]
+    FailedResolution,
+
+    #[error("Assertion failed: Regular expression failed to run")]
+    Disconnect(#[from] fancy_regex::Error),
+
+    #[error(transparent)]
+    JsonError(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    IOError(#[from] std::io::Error),
+}
 
 pub enum Resolution {
     Specifier(String),
     Path(PathBuf),
 }
 
-pub struct PnpResolutionHost {
-    pub find_pnp_manifest: Box<dyn Fn(&Path) -> Result<Option<Manifest>, Box<dyn std::error::Error>>>,
+pub struct ResolutionHost {
+    pub find_pnp_manifest: Box<dyn Fn(&Path) -> Result<Option<Manifest>, Error>>,
 }
 
-impl Default for PnpResolutionHost {
-    fn default() -> PnpResolutionHost {
-        PnpResolutionHost {
+impl Default for ResolutionHost {
+    fn default() -> ResolutionHost {
+        ResolutionHost {
             find_pnp_manifest: Box::new(find_pnp_manifest),
         }
     }
 }
 
 #[derive(Default)]
-pub struct PnpResolutionConfig {
+pub struct ResolutionConfig {
     pub builtins: HashSet<String>,
-    pub host: PnpResolutionHost,
+    pub host: ResolutionHost,
 }
 
 #[derive(Clone)]
@@ -101,7 +118,7 @@ pub struct Manifest {
     package_registry_data: HashMap<String, HashMap<String, PackageInformation>>,
 }
 
-pub fn is_builtin(specifier: &str, config: &PnpResolutionConfig) -> bool {
+pub fn is_builtin(specifier: &str, config: &ResolutionConfig) -> bool {
     config.builtins.contains(specifier)
 }
 
@@ -113,7 +130,7 @@ pub fn is_path_specifier(specifier: &str) -> bool {
     RE.is_match(specifier).unwrap()
 }
 
-pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>), SimpleError> {
+pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>), Error> {
     let mut segments = specifier.splitn(3, '/');
     let mut ident_option: Option<String> = None;
 
@@ -130,7 +147,7 @@ pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>)
     if let Some(ident) = ident_option {
         Ok((ident, segments.next().map(|v| v.to_string())))
     } else {
-        bail!("Invalid specifier")
+        Err(Error::BadSpecifier)
     }
 }
 
@@ -148,8 +165,8 @@ pub fn find_closest_pnp_manifest_path(p: &Path) -> Option<PathBuf> {
     }
 }
 
-pub fn load_pnp_manifest(p: &Path) -> Result<Manifest, Box<dyn std::error::Error>> {
-    let manifest_content = fs::read_to_string(p)?;
+pub fn load_pnp_manifest(p: &Path) -> Result<Manifest, Error> {
+    let manifest_content = std::fs::read_to_string(p)?;
 
     lazy_static! {
         static ref RE: Regex = Regex::new("const\\s+RAW_RUNTIME_STATE\\s*=\\s*'").unwrap();
@@ -219,7 +236,7 @@ pub fn init_pnp_manifest(manifest: &mut Manifest, p: &Path) {
     }
 }
 
-pub fn find_pnp_manifest(parent: &Path) -> Result<Option<Manifest>, Box<dyn std::error::Error>> {
+pub fn find_pnp_manifest(parent: &Path) -> Result<Option<Manifest>, Error> {
     find_closest_pnp_manifest_path(parent).map_or(Ok(None), |p| Ok(Some(load_pnp_manifest(&p)?)))
 }
 
@@ -240,7 +257,7 @@ pub fn find_locator<'a>(manifest: &'a Manifest, path: &Path) -> Option<&'a Packa
     manifest.location_trie.get_ancestor_value(&trie_key)
 }
 
-pub fn get_package<'a>(manifest: &'a Manifest, locator: &PackageLocator) -> Result<&'a PackageInformation, Box<dyn std::error::Error>> {
+pub fn get_package<'a>(manifest: &'a Manifest, locator: &PackageLocator) -> Result<&'a PackageInformation, Error> {
     let references = manifest.package_registry_data.get(&locator.name)
         .expect("Should have an entry in the package registry");
 
@@ -258,7 +275,7 @@ pub fn is_excluded_from_fallback(manifest: &Manifest, locator: &PackageLocator) 
     }
 }
 
-pub fn pnp_resolve(specifier: &str, parent: &Path, config: &PnpResolutionConfig) -> Result<Resolution, Box<dyn std::error::Error>> {
+pub fn pnp_resolve(specifier: &str, parent: &Path, config: &ResolutionConfig) -> Result<Resolution, Error> {
     if is_builtin(specifier, config) {
         return Ok(Resolution::Specifier(specifier.to_string()))
     }
@@ -270,7 +287,7 @@ pub fn pnp_resolve(specifier: &str, parent: &Path, config: &PnpResolutionConfig)
     resolve_to_unqualified(specifier, parent, config)
 }
 
-pub fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &PnpResolutionConfig) -> Result<Resolution, Box<dyn std::error::Error>> {
+pub fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &ResolutionConfig) -> Result<Resolution, Error> {
     let (ident, module_path) = parse_bare_identifier(specifier)?;
 
     if let Some(manifest) = (config.host.find_pnp_manifest)(parent)? {
@@ -295,7 +312,7 @@ pub fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &PnpResolu
             }
 
             if !is_set {
-                bail!("Resolution failed");
+                return Err(Error::FailedResolution);
             }
 
             if let Some(resolution) = reference_or_alias {
@@ -309,7 +326,7 @@ pub fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &PnpResolu
 
                 Ok(Resolution::Path(PathBuf::from(normalized_path)))
             } else {
-                bail!("Resolution failed: Unsatisfied peer dependency");
+                return Err(Error::FailedResolution);
             }
         } else {
             Ok(Resolution::Specifier(specifier.to_string()))

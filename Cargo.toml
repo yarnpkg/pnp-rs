@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 clean-path = "0.2.1"
-dashmap = "5.4.0"
 fancy-regex = "0.11.0"
 lazy_static = "1.4.0"
 libdeflater = "0.12.0"
@@ -16,11 +15,9 @@ path-slash = "0.2.1"
 pathdiff = "0.2.1"
 radix_trie = "0.2.1"
 regex = "1.7.1"
-relative-path = { version = "1.7.3", features = ["serde"] }
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
-serde_regex = "1.1.0"
 serde_with = "2.2.0"
-simple-error = "0.3.0"
+thiserror = "1.0.39"
 zip = { version = "0.6.2", default-features = false }
 

@@ -1,7 +1,7 @@
-use std::{borrow::Cow, path::{PathBuf}};
 use fancy_regex::Regex;
 use path_slash::PathBufExt;
 use serde::{de::Error, Deserialize, Deserializer};
+use std::{borrow::Cow, path::{PathBuf}};
 
 pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
     let original_str = original.as_ref();

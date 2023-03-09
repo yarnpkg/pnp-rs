@@ -1,6 +1,5 @@
+use pnp_rs::{pnp_resolve, ResolutionConfig, Resolution};
 use std::path::PathBuf;
-
-use pnp_rs::{pnp_resolve, PnpResolutionConfig, Resolution};
 
 fn main() {
     let mut args = std::env::args();
@@ -18,7 +17,7 @@ fn main() {
     println!("specifier = {}", specifier);
     println!("parent    = {:?}", parent);
 
-    let resolution = pnp_resolve(&specifier, &parent, &PnpResolutionConfig {
+    let resolution = pnp_resolve(&specifier, &parent, &ResolutionConfig {
         ..Default::default()
     });
 

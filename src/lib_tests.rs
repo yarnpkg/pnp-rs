@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::{PnpResolutionConfig, Resolution, Manifest};
+use crate::{ResolutionConfig, Resolution, Manifest};
 
 #[derive(Deserialize)]
 struct Test {
@@ -20,9 +20,7 @@ struct TestSuite {
 mod tests {
     use std::{fs, path::PathBuf};
 
-    use crate::{init_pnp_manifest, resolve_to_unqualified, PnpResolutionHost};
-
-    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use crate::{init_pnp_manifest, resolve_to_unqualified, ResolutionHost};
     use super::*;
 
     #[test]
@@ -47,12 +45,12 @@ mod tests {
 
                 let manifest_copy = manifest.clone();
 
-                let host = PnpResolutionHost {
+                let host = ResolutionHost {
                     find_pnp_manifest: Box::new(move |_| Ok(Some(manifest_copy.clone()))),
                     ..Default::default()
                 };
 
-                let config = PnpResolutionConfig {
+                let config = ResolutionConfig {
                     host,
                     ..Default::default()
                 };
