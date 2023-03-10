@@ -25,6 +25,9 @@ pub enum Error {
     #[error("Unsupported compression")]
     UnsupportedCompression,
 
+    #[error("Decompression error")]
+    DecompressionError,
+
     #[error(transparent)]
     IOError(#[from] std::io::Error),
 
@@ -96,23 +99,18 @@ impl Zip {
 
         match entry.compression() {
             zip::CompressionMethod::DEFLATE => {
-                let mut out = Vec::new();
-                out.resize(entry.size() as usize, 0);
+                let decompressed_data = miniz_oxide::inflate::decompress_to_vec(&data)
+                    .map_err(|_e| Error::DecompressionError)?;
 
-                libdeflater::Decompressor::new().deflate_decompress(
-                    &data,
-                    &mut out,
-                ).unwrap();
-
-                Ok(out)
+                Ok(decompressed_data)
             }
 
             zip::CompressionMethod::STORE => {
-                return Ok(data)
+                Ok(data)
             }
 
             _ => {
-                return Err(Error::UnsupportedCompression);
+                Err(Error::UnsupportedCompression)
             }
         }
     }
