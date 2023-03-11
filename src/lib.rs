@@ -139,8 +139,8 @@ pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>)
     }
 }
 
-pub fn find_closest_pnp_manifest_path(p: &Path) -> Option<PathBuf> {
-    if let Some(directory_path) = p.parent() {
+pub fn find_closest_pnp_manifest_path<P: AsRef<Path>>(p: P) -> Option<PathBuf> {
+    if let Some(directory_path) = p.as_ref().parent() {
         let pnp_path = directory_path.join(".pnp.cjs");
 
         if pnp_path.exists() {
@@ -153,11 +153,11 @@ pub fn find_closest_pnp_manifest_path(p: &Path) -> Option<PathBuf> {
     }
 }
 
-pub fn load_pnp_manifest(p: &Path) -> Result<Manifest, Error> {
-    let manifest_content = std::fs::read_to_string(p)?;
+pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
+    let manifest_content = std::fs::read_to_string(p.as_ref())?;
 
     lazy_static! {
-        static ref RE: Regex = Regex::new("const\\s+RAW_RUNTIME_STATE\\s*=\\s*'").unwrap();
+        static ref RE: Regex = Regex::new("(const\\s+RAW_RUNTIME_STATE\\s*=\\s*|hydrateRuntimeState\\(JSON\\.parse\\()'").unwrap();
     }
 
     let manifest_match = RE.find(&manifest_content)?
@@ -183,13 +183,13 @@ pub fn load_pnp_manifest(p: &Path) -> Result<Manifest, Error> {
     }
 
     let mut manifest: Manifest = serde_json::from_str(&json_string.to_owned())?;
-    init_pnp_manifest(&mut manifest, p);
+    init_pnp_manifest(&mut manifest, p.as_ref());
 
     Ok(manifest)
 }
 
-pub fn init_pnp_manifest(manifest: &mut Manifest, p: &Path) {
-    manifest.manifest_dir = p.parent()
+pub fn init_pnp_manifest<P: AsRef<Path>>(manifest: &mut Manifest, p: P) {
+    manifest.manifest_dir = p.as_ref().parent()
         .expect("Should have a parent directory")
         .to_owned();
 
@@ -228,7 +228,7 @@ pub fn find_pnp_manifest(parent: &Path) -> Result<Option<Manifest>, Error> {
     find_closest_pnp_manifest_path(parent).map_or(Ok(None), |p| Ok(Some(load_pnp_manifest(&p)?)))
 }
 
-pub fn find_locator<'a>(manifest: &'a Manifest, path: &Path) -> Option<&'a PackageLocator> {
+pub fn find_locator<'a, P: AsRef<Path>>(manifest: &'a Manifest, path: &P) -> Option<&'a PackageLocator> {
     let rel_path = pathdiff::diff_paths(path, &manifest.manifest_dir)
         .expect("Assertion failed: Provided path should be absolute");
 
@@ -239,7 +239,7 @@ pub fn find_locator<'a>(manifest: &'a Manifest, path: &Path) -> Option<&'a Packa
     }
 
     let trie_key = util::normalize_path(
-        path.to_string_lossy(),
+        path.as_ref().to_string_lossy(),
     );
 
     manifest.location_trie.get_ancestor_value(&trie_key)
@@ -263,11 +263,11 @@ pub fn is_excluded_from_fallback(manifest: &Manifest, locator: &PackageLocator) 
     }
 }
 
-pub fn resolve_to_unqualified(specifier: &str, parent: &Path, config: &ResolutionConfig) -> Result<Resolution, Error> {
+pub fn resolve_to_unqualified<P: AsRef<Path>>(specifier: &str, parent: P, config: &ResolutionConfig) -> Result<Resolution, Error> {
     let (ident, module_path) = parse_bare_identifier(specifier)?;
 
-    if let Some(manifest) = (config.host.find_pnp_manifest)(parent)? {
-        if let Some(parent_locator) = find_locator(&manifest, parent) {
+    if let Some(manifest) = (config.host.find_pnp_manifest)(parent.as_ref())? {
+        if let Some(parent_locator) = find_locator(&manifest, &parent) {
             let parent_pkg = get_package(&manifest, parent_locator)?;
 
             let mut reference_or_alias: Option<PackageDependency> = None;

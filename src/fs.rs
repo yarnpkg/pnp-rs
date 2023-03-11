@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_zip_list() {
-        let zip = open_zip(&PathBuf::from("@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip"))
+        let zip = open_zip(&PathBuf::from("data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip"))
             .unwrap();
 
         let mut dirs: Vec<&String> = zip.dirs.iter().collect();
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_zip_read() {
-        let mut zip = open_zip(&PathBuf::from("@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip"))
+        let mut zip = open_zip(&PathBuf::from("data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip"))
             .unwrap();
 
         let res = zip.read_to_string("node_modules/@babel/plugin-syntax-dynamic-import/package.json")
