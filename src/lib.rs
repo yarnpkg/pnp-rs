@@ -261,7 +261,7 @@ pub fn is_excluded_from_fallback(manifest: &Manifest, locator: &PackageLocator) 
     }
 }
 
-fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, specifier: &str, parent: P) -> Result<Resolution, Error> {
+pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, specifier: &str, parent: P) -> Result<Resolution, Error> {
     let (ident, module_path) = parse_bare_identifier(specifier)?;
 
     if let Some(parent_locator) = find_locator(&manifest, &parent) {
