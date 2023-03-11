@@ -195,10 +195,6 @@ pub fn init_pnp_manifest<P: AsRef<Path>>(manifest: &mut Manifest, p: P) {
 
     for (name, ranges) in manifest.package_registry_data.iter_mut() {
         for (reference, info) in ranges.iter_mut() {
-            if info.discard_from_lookup {
-                continue;
-            }
-
             let p = manifest.manifest_dir
                 .join(info.package_location.clone());
 
@@ -206,10 +202,12 @@ pub fn init_pnp_manifest<P: AsRef<Path>>(manifest: &mut Manifest, p: P) {
                 p.to_string_lossy(),
             );
 
-            manifest.location_trie.insert(info.package_location.clone(), PackageLocator {
-                name: name.clone(),
-                reference: reference.clone(),
-            });
+            if !info.discard_from_lookup {
+                manifest.location_trie.insert(info.package_location.clone(), PackageLocator {
+                    name: name.clone(),
+                    reference: reference.clone(),
+                });
+            }
         }
     }
 
@@ -263,47 +261,51 @@ pub fn is_excluded_from_fallback(manifest: &Manifest, locator: &PackageLocator) 
     }
 }
 
-pub fn resolve_to_unqualified<P: AsRef<Path>>(specifier: &str, parent: P, config: &ResolutionConfig) -> Result<Resolution, Error> {
+fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, specifier: &str, parent: P) -> Result<Resolution, Error> {
     let (ident, module_path) = parse_bare_identifier(specifier)?;
 
-    if let Some(manifest) = (config.host.find_pnp_manifest)(parent.as_ref())? {
-        if let Some(parent_locator) = find_locator(&manifest, &parent) {
-            let parent_pkg = get_package(&manifest, parent_locator)?;
+    if let Some(parent_locator) = find_locator(&manifest, &parent) {
+        let parent_pkg = get_package(&manifest, parent_locator)?;
 
-            let mut reference_or_alias: Option<PackageDependency> = None;
-            let mut is_set = false;
-            
-            if !is_set {
-                if let Some(Some(binding)) = parent_pkg.package_dependencies.get(&ident) {
-                    reference_or_alias = Some(binding.clone());
-                    is_set = true;
-                }
+        let mut reference_or_alias: Option<PackageDependency> = None;
+        let mut is_set = false;
+        
+        if !is_set {
+            if let Some(Some(binding)) = parent_pkg.package_dependencies.get(&ident) {
+                reference_or_alias = Some(binding.clone());
+                is_set = true;
             }
-
-            if !is_set && manifest.enable_top_level_fallback && !is_excluded_from_fallback(&manifest, parent_locator) {
-                if let Some(fallback_resolution) = manifest.fallback_pool.get(&ident) {
-                    reference_or_alias = fallback_resolution.clone();
-                    is_set = true;
-                }
-            }
-
-            if !is_set {
-                return Err(Error::FailedResolution);
-            }
-
-            if let Some(resolution) = reference_or_alias {
-                let dependency_pkg = match resolution {
-                    PackageDependency::Reference(reference) => get_package(&manifest, &PackageLocator { name: ident, reference }),
-                    PackageDependency::Alias(name, reference) => get_package(&manifest, &PackageLocator { name, reference }),
-                }?;
-
-                Ok(Resolution::Package(PathBuf::from(dependency_pkg.package_location.clone()), module_path.clone()))
-            } else {
-                return Err(Error::FailedResolution);
-            }
-        } else {
-            Ok(Resolution::Specifier(specifier.to_string()))
         }
+
+        if !is_set && manifest.enable_top_level_fallback && !is_excluded_from_fallback(&manifest, parent_locator) {
+            if let Some(fallback_resolution) = manifest.fallback_pool.get(&ident) {
+                reference_or_alias = fallback_resolution.clone();
+                is_set = true;
+            }
+        }
+
+        if !is_set {
+            return Err(Error::FailedResolution);
+        }
+
+        if let Some(resolution) = reference_or_alias {
+            let dependency_pkg = match resolution {
+                PackageDependency::Reference(reference) => get_package(&manifest, &PackageLocator { name: ident, reference }),
+                PackageDependency::Alias(name, reference) => get_package(&manifest, &PackageLocator { name, reference }),
+            }?;
+
+            Ok(Resolution::Package(PathBuf::from(dependency_pkg.package_location.clone()), module_path.clone()))
+        } else {
+            return Err(Error::FailedResolution);
+        }
+    } else {
+        Ok(Resolution::Specifier(specifier.to_string()))
+    }
+}
+
+pub fn resolve_to_unqualified<P: AsRef<Path>>(specifier: &str, parent: P, config: &ResolutionConfig) -> Result<Resolution, Error> {
+    if let Some(manifest) = (config.host.find_pnp_manifest)(parent.as_ref())? {
+        resolve_to_unqualified_via_manifest(&manifest, &specifier, &parent)
     } else {
         Ok(Resolution::Specifier(specifier.to_string()))
     }
