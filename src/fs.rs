@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use lru::LruCache;
 use regex::bytes::Regex;
 use serde::Deserialize;
-use std::{path::{Path, PathBuf}, fs, io::{BufReader, Read}, collections::{HashSet, HashMap}};
+use std::{path::{Path, PathBuf}, fs, io::{BufReader, Read}, collections::{HashSet, HashMap}, str::Utf8Error, num::NonZeroUsize};
 use zip::{ZipArchive, result::ZipError};
 
 use crate::util;
@@ -12,8 +12,8 @@ use crate::util;
 #[derive(Deserialize)]
 #[derive(PartialEq)]
 #[serde(untagged)]
-pub enum PnpPath {
-    Zip(PathBuf, Option<String>),
+pub enum VPath {
+    Zip(PathBuf, String),
     Native(PathBuf),
 }
 
@@ -29,18 +29,34 @@ pub enum Error {
     DecompressionError,
 
     #[error(transparent)]
+    Utf8Error(#[from] Utf8Error),
+
+    #[error(transparent)]
     IOError(#[from] std::io::Error),
 
     #[error(transparent)]
     ZipError(#[from] ZipError),
 }
 
-pub fn open_zip(p: &Path) -> Result<Zip, Error> {
+fn make_io_utf8_error() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "File did not contain valid UTF-8"
+    )
+}
+
+fn io_bytes_to_str(vec: &[u8]) -> Result<&str, std::io::Error> {
+    std::str::from_utf8(&vec)
+        .map_err(|_| make_io_utf8_error())
+}
+
+pub fn open_zip(p: &Path) -> Result<Zip, std::io::Error> {
     let file = fs::File::open(p)?;
     let reader = BufReader::new(file);
 
     let archive = ZipArchive::new(reader)?;
-    let zip = Zip::new(archive)?;
+    let zip = Zip::new(archive)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to read the zip file"))?;
 
     Ok(zip)
 }
@@ -88,10 +104,10 @@ impl Zip {
         self.files.contains_key(p)
     }
 
-    pub fn read_file(&mut self, p: &str) -> Result<Vec<u8>, Error> {
+    pub fn read(&mut self, p: &str) -> Result<Vec<u8>, std::io::Error> {
         let i = self.files.get(p)
-            .ok_or(Error::EntryNotFound)?;
-        
+            .ok_or(std::io::Error::from(std::io::ErrorKind::NotFound))?;
+
         let mut entry = self.archive.by_index_raw(*i)?;
         let mut data = Vec::new();
 
@@ -100,7 +116,7 @@ impl Zip {
         match entry.compression() {
             zip::CompressionMethod::DEFLATE => {
                 let decompressed_data = miniz_oxide::inflate::decompress_to_vec(&data)
-                    .map_err(|_e| Error::DecompressionError)?;
+                    .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Error during decompression"))?;
 
                 Ok(decompressed_data)
             }
@@ -110,56 +126,84 @@ impl Zip {
             }
 
             _ => {
-                Err(Error::UnsupportedCompression)
+                Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Unsupported compression algorithm"))
             }
         }
+    }
+
+    pub fn read_to_string(&mut self, p: &str) -> Result<String, std::io::Error> {
+        let data = self.read(p)?;
+
+        Ok(io_bytes_to_str(data.as_slice())?.to_string())
     }
 }
 
 pub trait ZipCache {
-    fn act<T, F : FnOnce(&Zip) -> T>(&mut self, p: &Path, cb: F) -> Result<T, &Error>;
+    fn act<T, F : FnOnce(&mut Zip) -> T>(&mut self, p: &Path, cb: F) -> Result<T, std::io::Error>;
+
+    fn canonicalize(&mut self, zip_path: &Path, sub: &str) -> Result<PathBuf, std::io::Error>;
+
+    fn is_dir(&mut self, zip_path: &Path, sub: &str) -> bool;
+    fn is_file(&mut self, zip_path: &Path, sub: &str) -> bool;
+
+    fn read(&mut self, zip_path: &Path, sub: &str) -> Result<Vec<u8>, std::io::Error>;
+    fn read_to_string(&mut self, zip_path: &Path, sub: &str) -> Result<String, std::io::Error>;
 }
 
 pub struct LruZipCache {
-    lru: LruCache<PathBuf, Result<Zip, Error>>,
+    lru: LruCache<PathBuf, Zip>,
 }
 
-impl ZipCache for LruZipCache {
-    fn act<T, F : FnOnce(&Zip) -> T>(&mut self, p: &Path, cb: F) -> Result<T, &Error> {
-        let res = self.lru.get_or_insert(p.to_owned(), || {
-            open_zip(p)
-        });
+impl Default for LruZipCache {
+    fn default() -> LruZipCache {
+        LruZipCache::new(50)
+    }
+}
 
-        match res {
-            Ok(zip) => Ok(cb(zip)),
-            Err(err) => Err(&err),
+impl LruZipCache {
+    pub fn new(n: usize) -> LruZipCache {
+        LruZipCache {
+            lru: LruCache::new(NonZeroUsize::new(n).unwrap()),
         }
     }
 }
 
-/*
-  static resolveVirtual(p: PortablePath): PortablePath {
-    const match = p.match(VIRTUAL_REGEXP);
-    if (!match || (!match[3] && match[5]))
-      return p;
+impl ZipCache for LruZipCache {
+    fn act<T, F : FnOnce(&mut Zip) -> T>(&mut self, p: &Path, cb: F) -> Result<T, std::io::Error> {
+        if let Some(zip) = self.lru.get_mut(p) {
+            return Ok(cb(zip));
+        }
 
-    const target = ppath.dirname(match[1] as PortablePath);
-    if (!match[3] || !match[4])
-      return target;
+        let zip = open_zip(p)?;
+        self.lru.put(p.to_owned(), zip);
 
-    const isnum = NUMBER_REGEXP.test(match[4]);
-    if (!isnum)
-      return p;
+        Ok(cb(self.lru.get_mut(p).unwrap()))
+    }
 
-    const depth = Number(match[4]);
-    const backstep = `../`.repeat(depth) as PortablePath;
-    const subpath = (match[5] || `.`) as PortablePath;
+    fn canonicalize(&mut self, zip_path: &Path, sub: &str) -> Result<PathBuf, std::io::Error> {
+        let res = std::fs::canonicalize(zip_path)?;
 
-    return VirtualFS.resolveVirtual(ppath.join(target, backstep, subpath));
-  }
-*/
+        Ok(res.join(sub))
+    }
 
-pub fn path_to_pnp(p: &Path) -> Result<PnpPath, Box<dyn std::error::Error>> {
+    fn is_dir(&mut self, zip_path: &Path, p: &str) -> bool {
+        self.act(zip_path, |zip| zip.is_dir(p)).unwrap_or(false)
+    }
+
+    fn is_file(&mut self, zip_path: &Path, p: &str) -> bool {
+        self.act(zip_path, |zip| zip.is_file(p)).unwrap_or(false)
+    }
+
+    fn read(&mut self, zip_path: &Path, p: &str) -> Result<Vec<u8>, std::io::Error> {
+        self.act(zip_path, |zip| zip.read(p))?
+    }
+
+    fn read_to_string(&mut self, zip_path: &Path, p: &str) -> Result<String, std::io::Error> {
+        self.act(zip_path, |zip| zip.read_to_string(p))?
+    }
+}
+
+pub fn vpath(p: &Path) -> Result<VPath, std::io::Error> {
     lazy_static! {
         // $0: full path
         // $1: virtual folder
@@ -171,24 +215,24 @@ pub fn path_to_pnp(p: &Path) -> Result<PnpPath, Box<dyn std::error::Error>> {
         static ref ZIP_RE: Regex = Regex::new("\\.zip").unwrap();
     }
 
-    let p_str = p.as_os_str()
+    let mut p_str = p.as_os_str()
         .to_string_lossy()
         .to_string();
 
-    let mut p_bytes = util::normalize_path(p_str)
+    let mut p_bytes = util::normalize_path(p_str.clone())
         .as_bytes().to_vec();
 
     if let Some(m) = VIRTUAL_RE.captures(&p_bytes) {
         if let (Some(target), Some(depth), Some(subpath)) = (m.get(1), m.get(4), m.get(5)) {
-            if let Ok(depth_n) = str::parse(&std::str::from_utf8(depth.as_bytes())?) {
+            if let Ok(depth_n) = str::parse(io_bytes_to_str(&depth.as_bytes())?) {
                 let bytes = [
                     &target.as_bytes(),
                     &b"../".repeat(depth_n)[0..],
                     &subpath.as_bytes(),
                 ].concat();
 
-                p_bytes = util::normalize_path(std::str::from_utf8(&bytes)?)
-                    .as_bytes().to_vec();    
+                p_str = util::normalize_path(io_bytes_to_str(&bytes)?);
+                p_bytes = p_str.as_bytes().to_vec();    
             }
         }
     }
@@ -203,7 +247,7 @@ pub fn path_to_pnp(p: &Path) -> Result<PnpPath, Box<dyn std::error::Error>> {
             }
 
             if idx == 0 || p_bytes.get(idx - 1) == Some(&b'/') {
-                return Ok(PnpPath::Native(p.to_owned()))
+                return Ok(VPath::Native(p.to_owned()))
             }
 
             if let Some(next_m) = ZIP_RE.find_at(&p_bytes, next_char_idx) {
@@ -214,20 +258,20 @@ pub fn path_to_pnp(p: &Path) -> Result<PnpPath, Box<dyn std::error::Error>> {
         }
 
         if p_bytes.len() > next_char_idx && p_bytes.get(next_char_idx) != Some(&b'/') {
-            Ok(PnpPath::Native(p.to_owned()))
+            Ok(VPath::Native(PathBuf::from(p_str)))
         } else {
-            let zip_path = PathBuf::from(std::str::from_utf8(&p_bytes[0..next_char_idx])?);
+            let zip_path = PathBuf::from(io_bytes_to_str(&p_bytes[0..next_char_idx])?);
 
             let sub_path = if next_char_idx + 1 < p_bytes.len() {
-                Some(util::normalize_path(std::str::from_utf8(&p_bytes[next_char_idx + 1..])?))
+                util::normalize_path(io_bytes_to_str(&p_bytes[next_char_idx + 1..])?)
             } else {
-                None
+                return Ok(VPath::Native(zip_path))
             };
 
-            Ok(PnpPath::Zip(zip_path, sub_path))
+            Ok(VPath::Zip(zip_path, sub_path))
         }
     } else {
-        Ok(PnpPath::Native(p.to_owned()))
+        Ok(VPath::Native(PathBuf::from(p_str)))
     }
 }
 
@@ -269,42 +313,41 @@ mod tests {
         let mut zip = open_zip(&PathBuf::from("@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip"))
             .unwrap();
 
-        let res = zip.read_file("node_modules/@babel/plugin-syntax-dynamic-import/package.json")
+        let res = zip.read_to_string("node_modules/@babel/plugin-syntax-dynamic-import/package.json")
             .unwrap();
 
-        let res_str = std::str::from_utf8(&res)
-            .unwrap();
-
-        assert_eq!(res_str, "{\n  \"name\": \"@babel/plugin-syntax-dynamic-import\",\n  \"version\": \"7.8.3\",\n  \"description\": \"Allow parsing of import()\",\n  \"repository\": \"https://github.com/babel/babel/tree/master/packages/babel-plugin-syntax-dynamic-import\",\n  \"license\": \"MIT\",\n  \"publishConfig\": {\n    \"access\": \"public\"\n  },\n  \"main\": \"lib/index.js\",\n  \"keywords\": [\n    \"babel-plugin\"\n  ],\n  \"dependencies\": {\n    \"@babel/helper-plugin-utils\": \"^7.8.0\"\n  },\n  \"peerDependencies\": {\n    \"@babel/core\": \"^7.0.0-0\"\n  },\n  \"devDependencies\": {\n    \"@babel/core\": \"^7.8.0\"\n  }\n}\n");
+        assert_eq!(res, "{\n  \"name\": \"@babel/plugin-syntax-dynamic-import\",\n  \"version\": \"7.8.3\",\n  \"description\": \"Allow parsing of import()\",\n  \"repository\": \"https://github.com/babel/babel/tree/master/packages/babel-plugin-syntax-dynamic-import\",\n  \"license\": \"MIT\",\n  \"publishConfig\": {\n    \"access\": \"public\"\n  },\n  \"main\": \"lib/index.js\",\n  \"keywords\": [\n    \"babel-plugin\"\n  ],\n  \"dependencies\": {\n    \"@babel/helper-plugin-utils\": \"^7.8.0\"\n  },\n  \"peerDependencies\": {\n    \"@babel/core\": \"^7.0.0-0\"\n  },\n  \"devDependencies\": {\n    \"@babel/core\": \"^7.8.0\"\n  }\n}\n");
     }
 
     #[test]
     fn test_path_to_pnp() {
-        let tests: Vec<(PathBuf, Option<PnpPath>)> = serde_json::from_str(r#"[
+        let tests: Vec<(PathBuf, Option<VPath>)> = serde_json::from_str(r#"[
             [".zip", null],
             ["foo", null],
-            ["foo.zip", ["foo.zip", null]],
+            ["foo.zip", "foo.zip"],
             ["foo.zip/bar", ["foo.zip", "bar"]],
             ["foo.zip/bar/baz", ["foo.zip", "bar/baz"]],
-            ["/a/b/c/foo.zip", ["/a/b/c/foo.zip", null]],
-            ["./a/b/c/foo.zip", ["a/b/c/foo.zip", null]],
-            ["./a/b/__virtual__/abcdef/0/c/foo.zip", ["a/b/c/foo.zip", null]],
-            ["./a/b/__virtual__/abcdef/1/c/foo.zip", ["a/c/foo.zip", null]],
+            ["/a/b/c/foo.zip", "/a/b/c/foo.zip"],
+            ["./a/b/c/foo.zip", "a/b/c/foo.zip"],
+            ["./a/b/__virtual__/abcdef/0/c/d", "a/b/c/d"],
+            ["./a/b/__virtual__/abcdef/1/c/d", "a/c/d"],
+            ["./a/b/__virtual__/abcdef/0/c/foo.zip/bar", ["a/b/c/foo.zip", "bar"]],
+            ["./a/b/__virtual__/abcdef/1/c/foo.zip/bar", ["a/c/foo.zip", "bar"]],
             ["./a/b/c/.zip", null],
             ["./a/b/c/foo.zipp", null],
             ["./a/b/c/foo.zip/bar/baz/qux.zip", ["a/b/c/foo.zip", "bar/baz/qux.zip"]],
-            ["./a/b/c/foo.zip-bar.zip", ["a/b/c/foo.zip-bar.zip", null]],
+            ["./a/b/c/foo.zip-bar.zip", "a/b/c/foo.zip-bar.zip"],
             ["./a/b/c/foo.zip-bar.zip/bar/baz/qux.zip", ["a/b/c/foo.zip-bar.zip", "bar/baz/qux.zip"]],
             ["./a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip/d", ["a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip", "d"]]
         ]"#).expect("Assertion failed: Expected the expectations to be loaded");
 
         for (input, expected) in tests.iter() {
-            let expectation: PnpPath = match expected {
+            let expectation: VPath = match expected {
                 Some(p) => p.clone(),
-                None => PnpPath::Native(input.clone()),
+                None => VPath::Native(input.clone()),
             };
 
-            match path_to_pnp(input) {
+            match vpath(input) {
                 Ok(res) => {
                     assert_eq!(res, expectation, "input='{:?}'", input);
                 }
