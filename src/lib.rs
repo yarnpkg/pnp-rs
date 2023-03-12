@@ -85,7 +85,10 @@ pub struct PackageInformation {
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     #[serde(skip_deserializing)]
-    manifest_dir: PathBuf,
+    pub manifest_dir: PathBuf,
+
+    #[serde(skip_deserializing)]
+    pub manifest_path: PathBuf,
 
     #[serde(skip_deserializing)]
     location_trie: Trie<String, PackageLocator>,
@@ -189,6 +192,9 @@ pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
 }
 
 pub fn init_pnp_manifest<P: AsRef<Path>>(manifest: &mut Manifest, p: P) {
+    manifest.manifest_path = p.as_ref()
+        .to_path_buf();
+
     manifest.manifest_dir = p.as_ref().parent()
         .expect("Should have a parent directory")
         .to_owned();
