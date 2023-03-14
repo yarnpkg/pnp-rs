@@ -27,6 +27,7 @@ pub enum Error {
     IOError(#[from] std::io::Error),
 }
 
+#[derive(Debug)]
 pub enum Resolution {
     Specifier(String),
     Package(PathBuf, Option<String>),
