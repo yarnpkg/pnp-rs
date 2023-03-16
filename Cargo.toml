@@ -1,6 +1,6 @@
 [package]
 name = "pnp"
-version = "0.4.5"
+version = "0.4.6"
 edition = "2021"
 license = "BSD-2-Clause"
 description = "Resolution primitives for Yarn PnP"
@@ -8,14 +8,12 @@ homepage = "https://yarnpkg.com"
 repository = "https://github.com/yarnpkg/berry/"
 
 [dependencies]
-clean-path = "0.2.1"
+arca = "0.1.3"
 fancy-regex = "0.11.0"
 lazy_static = "1.4.0"
 lru = "0.10.0"
 miniz_oxide = "0.7.1"
-path-slash = "0.2.1"
 pathdiff = "0.2.1"
-radix_trie = "0.2.1"
 regex = "1.7.1"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"

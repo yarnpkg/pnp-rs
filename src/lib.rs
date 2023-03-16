@@ -3,7 +3,6 @@ mod util;
 
 use fancy_regex::Regex;
 use lazy_static::lazy_static;
-use radix_trie::Trie;
 use serde::Deserialize;
 use serde_with::{serde_as, DefaultOnNull};
 use std::{path::{Path, PathBuf}, collections::{HashSet, HashMap, hash_map::Entry}};
@@ -52,6 +51,8 @@ pub struct ResolutionConfig {
 }
 
 #[derive(Clone)]
+#[derive(Debug)]
+#[derive(Default)]
 #[derive(Deserialize)]
 pub struct PackageLocator {
     name: String,
@@ -71,7 +72,7 @@ enum PackageDependency {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageInformation {
-    package_location: String,
+    package_location: PathBuf,
 
     #[serde(default)]
     discard_from_lookup: bool,
@@ -92,7 +93,7 @@ pub struct Manifest {
     pub manifest_path: PathBuf,
 
     #[serde(skip_deserializing)]
-    location_trie: Trie<String, PackageLocator>,
+    location_trie: arca::path::Trie<PackageLocator>,
 
     enable_top_level_fallback: bool,
     ignore_pattern_data: Option<RegexDef>,
@@ -202,15 +203,17 @@ pub fn init_pnp_manifest<P: AsRef<Path>>(manifest: &mut Manifest, p: P) {
 
     for (name, ranges) in manifest.package_registry_data.iter_mut() {
         for (reference, info) in ranges.iter_mut() {
-            let p = manifest.manifest_dir
+            let package_location = manifest.manifest_dir
                 .join(info.package_location.clone());
 
-            info.package_location = util::normalize_path(
-                p.to_string_lossy(),
+            let normalized_location = arca::path::normalize_path(
+                &package_location.to_string_lossy(),
             );
 
+            info.package_location = PathBuf::from(normalized_location);
+
             if !info.discard_from_lookup {
-                manifest.location_trie.insert(info.package_location.clone(), PackageLocator {
+                manifest.location_trie.insert(&info.package_location, PackageLocator {
                     name: name.clone(),
                     reference: reference.clone(),
                 });
@@ -238,16 +241,12 @@ pub fn find_locator<'a, P: AsRef<Path>>(manifest: &'a Manifest, path: &P) -> Opt
         .expect("Assertion failed: Provided path should be absolute");
 
     if let Some(regex) = &manifest.ignore_pattern_data {
-        if regex.0.is_match(&util::normalize_path(rel_path.to_string_lossy())).unwrap() {
+        if regex.0.is_match(&arca::path::normalize_path(rel_path.to_string_lossy())).unwrap() {
             return None
         }
     }
 
-    let trie_key = util::normalize_path(
-        path.as_ref().to_string_lossy(),
-    );
-
-    manifest.location_trie.get_ancestor_value(&trie_key)
+    manifest.location_trie.get_ancestor_value(&path)
 }
 
 pub fn get_package<'a>(manifest: &'a Manifest, locator: &PackageLocator) -> Result<&'a PackageInformation, Error> {
@@ -301,7 +300,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, 
                 PackageDependency::Alias(name, reference) => get_package(&manifest, &PackageLocator { name, reference }),
             }?;
 
-            Ok(Resolution::Package(PathBuf::from(dependency_pkg.package_location.clone()), module_path.clone()))
+            Ok(Resolution::Package(dependency_pkg.package_location.clone(), module_path.clone()))
         } else {
             return Err(Error::FailedResolution);
         }

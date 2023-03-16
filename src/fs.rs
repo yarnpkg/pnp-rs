@@ -5,8 +5,6 @@ use serde::Deserialize;
 use std::{path::{Path, PathBuf}, fs, io::{BufReader, Read}, collections::{HashSet, HashMap}, str::Utf8Error, num::NonZeroUsize};
 use zip::{ZipArchive, result::ZipError};
 
-use crate::util;
-
 #[derive(Clone)]
 #[derive(Debug)]
 #[derive(Deserialize)]
@@ -78,7 +76,7 @@ impl Zip {
         for i in 0..zip.archive.len() {
             let entry = zip.archive.by_index_raw(i)?;
 
-            let name = util::normalize_path(entry.name());
+            let name = arca::path::normalize_path(entry.name());
             let segments: Vec<&str> = name.split('/').collect();
 
             for t in 1..segments.len() - 1 {
@@ -219,7 +217,7 @@ pub fn vpath(p: &Path) -> Result<VPath, std::io::Error> {
         .to_string_lossy()
         .to_string();
 
-    let mut p_bytes = util::normalize_path(p_str.clone())
+    let mut p_bytes = arca::path::normalize_path(p_str.clone())
         .as_bytes().to_vec();
 
     if let Some(m) = VIRTUAL_RE.captures(&p_bytes) {
@@ -231,7 +229,7 @@ pub fn vpath(p: &Path) -> Result<VPath, std::io::Error> {
                     &subpath.as_bytes(),
                 ].concat();
 
-                p_str = util::normalize_path(io_bytes_to_str(&bytes)?);
+                p_str = arca::path::normalize_path(io_bytes_to_str(&bytes)?);
                 p_bytes = p_str.as_bytes().to_vec();    
             }
         }
@@ -263,7 +261,7 @@ pub fn vpath(p: &Path) -> Result<VPath, std::io::Error> {
             let zip_path = PathBuf::from(io_bytes_to_str(&p_bytes[0..next_char_idx])?);
 
             let sub_path = if next_char_idx + 1 < p_bytes.len() {
-                util::normalize_path(io_bytes_to_str(&p_bytes[next_char_idx + 1..])?)
+                arca::path::normalize_path(io_bytes_to_str(&p_bytes[next_char_idx + 1..])?)
             } else {
                 return Ok(VPath::Native(zip_path))
             };
