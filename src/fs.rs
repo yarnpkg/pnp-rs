@@ -5,13 +5,19 @@ use serde::Deserialize;
 use std::{path::{Path, PathBuf}, fs, io::{BufReader, Read}, collections::{HashSet, HashMap}, str::Utf8Error, num::NonZeroUsize};
 use zip::{ZipArchive, result::ZipError};
 
-#[derive(Clone)]
-#[derive(Debug)]
-#[derive(Deserialize)]
-#[derive(PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VPathInfo {
+    pub base_path: String,
+    pub virtual_segments: Option<(String, String)>,
+    pub zip_path: Option<String>,
+}
+
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum VPath {
-    Zip(PathBuf, String),
+    Virtual(VPathInfo),
     Native(PathBuf),
 }
 
@@ -201,76 +207,109 @@ impl ZipCache for LruZipCache {
     }
 }
 
-pub fn vpath(p: &Path) -> Result<VPath, std::io::Error> {
+pub fn split_zip(p_bytes: &[u8]) -> (&[u8], Option<&[u8]>) {
     lazy_static! {
-        // $0: full path
-        // $1: virtual folder
-        // $2: virtual segment
-        // $3: hash
-        // $4: depth
-        // $5: subpath
-        static ref VIRTUAL_RE: Regex = Regex::new("(/?(?:[^/]+/)*?)(?:\\$\\$virtual|__virtual__)((?:/((?:[^/]+-)?[a-f0-9]+)(?:/([^/]+))?)?((?:/.*)?))$").unwrap();
-        static ref ZIP_RE: Regex = Regex::new("\\.zip").unwrap();
+        static ref ZIP_RE: Regex = Regex::new(r"\.zip").unwrap();
     }
 
-    let mut p_str = p.as_os_str()
-        .to_string_lossy()
-        .to_string();
+    let mut search_offset = 0;
 
-    let mut p_bytes = arca::path::normalize_path(p_str.clone())
-        .as_bytes().to_vec();
+    while search_offset < p_bytes.len() {
+        if let Some(m) = ZIP_RE.find_at(&p_bytes, search_offset) {
+            let idx = m.start();
+            let next_char_idx = m.end();
+    
+            if idx == 0 || p_bytes.get(idx - 1) == Some(&b'/') || p_bytes.get(next_char_idx) != Some(&b'/') {
+                search_offset = next_char_idx;
+                continue;
+            }
+    
+            let zip_path = &p_bytes[0..next_char_idx + 1];
+            let sub_path = p_bytes.get(next_char_idx + 1..);
+    
+            return (zip_path, sub_path);
+        } else {
+            break;
+        }
+    }
+
+    (p_bytes, None)
+}
+
+pub fn split_virtual(p_bytes: &[u8]) -> std::io::Result<(usize, Option<(usize, usize)>)> {
+    lazy_static! {
+        static ref VIRTUAL_RE: Regex = Regex::new("(?:^|/)((?:\\$\\$virtual|__virtual__)/[a-f0-9]+/([0-9]+)/)").unwrap();
+    }
 
     if let Some(m) = VIRTUAL_RE.captures(&p_bytes) {
-        if let (Some(target), Some(depth), Some(subpath)) = (m.get(1), m.get(4), m.get(5)) {
+        if let (Some(main), Some(depth)) = (m.get(1), m.get(2)) {
             if let Ok(depth_n) = str::parse(io_bytes_to_str(&depth.as_bytes())?) {
-                let bytes = [
-                    &target.as_bytes(),
-                    &b"../".repeat(depth_n)[0..],
-                    &subpath.as_bytes(),
-                ].concat();
-
-                p_str = arca::path::normalize_path(io_bytes_to_str(&bytes)?);
-                p_bytes = p_str.as_bytes().to_vec();    
+                return Ok((main.start(), Some((main.end() - main.start(), depth_n))));
             }
         }
     }
 
-    if let Some(m) = ZIP_RE.find(&p_bytes) {
-        let mut idx = m.start();
-        let mut next_char_idx;
-        loop {
-            next_char_idx = idx + 4;
-            if p_bytes.get(next_char_idx) == Some(&b'/') {
-                break;
-            }
+    Ok((p_bytes.len(), None))
+}
 
-            if idx == 0 || p_bytes.get(idx - 1) == Some(&b'/') {
-                return Ok(VPath::Native(p.to_owned()))
-            }
+pub fn vpath(p: &Path) -> std::io::Result<VPath> {
+    let p_str = arca::path::normalize_path(
+        p.as_os_str()
+            .to_string_lossy()
+            .to_string()
+    );
 
-            if let Some(next_m) = ZIP_RE.find_at(&p_bytes, next_char_idx) {
-                idx = next_m.start();
-            } else {
-                break;
+    let p_bytes = p_str
+        .as_bytes().to_vec();
+
+    let (archive_path_u8, zip_path_u8)
+        = split_zip(&p_bytes);
+    let (mut base_path_len, virtual_path_u8)
+        = split_virtual(archive_path_u8)?;
+
+    let mut base_path_u8 = archive_path_u8;
+    let mut virtual_segments = None;
+
+    if let Some((mut virtual_len, parent_depth)) = virtual_path_u8 {
+        for _ in 0..parent_depth {
+            base_path_len -= 1;
+            virtual_len += 1;
+
+            while let Some(c) = archive_path_u8.get(base_path_len - 1)  {
+                if *c == b'/' {
+                    break;
+                } else {
+                    base_path_len -= 1;
+                    virtual_len += 1;
+                }
             }
         }
 
-        if p_bytes.len() > next_char_idx && p_bytes.get(next_char_idx) != Some(&b'/') {
-            Ok(VPath::Native(PathBuf::from(p_str)))
+        if let Some(c) = archive_path_u8.get(base_path_len - 1) {
+            if *c != b'/' {
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, "Invalid virtual back-reference"))
+            }
         } else {
-            let zip_path = PathBuf::from(io_bytes_to_str(&p_bytes[0..next_char_idx])?);
-
-            let sub_path = if next_char_idx + 1 < p_bytes.len() {
-                arca::path::normalize_path(io_bytes_to_str(&p_bytes[next_char_idx + 1..])?)
-            } else {
-                return Ok(VPath::Native(zip_path))
-            };
-
-            Ok(VPath::Zip(zip_path, sub_path))
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "Invalid virtual back-reference"))
         }
-    } else {
-        Ok(VPath::Native(PathBuf::from(p_str)))
+
+        base_path_u8 = &archive_path_u8[0..base_path_len];
+
+        virtual_segments = Some((
+            io_bytes_to_str(&archive_path_u8[base_path_len..archive_path_u8.len()])?.to_string(),
+            io_bytes_to_str(&archive_path_u8[base_path_len + virtual_len..archive_path_u8.len()])?.to_string(),
+        ));
+    } else if let None = zip_path_u8 {
+        return Ok(VPath::Native(PathBuf::from(p_str)));
     }
+
+    Ok(VPath::Virtual(VPathInfo {
+        base_path: io_bytes_to_str(base_path_u8)?.to_string(),
+        virtual_segments,
+        zip_path: zip_path_u8.map(|data| {
+            io_bytes_to_str(data).map(|str| str.to_string())
+        }).transpose()?,
+    }))
 }
 
 #[cfg(test)]
@@ -319,33 +358,69 @@ mod tests {
 
     #[test]
     fn test_path_to_pnp() {
-        let tests: Vec<(PathBuf, Option<VPath>)> = serde_json::from_str(r#"[
+        let tests: Vec<(String, Option<VPath>)> = serde_json::from_str(r#"[
             [".zip", null],
             ["foo", null],
-            ["foo.zip", "foo.zip"],
-            ["foo.zip/bar", ["foo.zip", "bar"]],
-            ["foo.zip/bar/baz", ["foo.zip", "bar/baz"]],
-            ["/a/b/c/foo.zip", "/a/b/c/foo.zip"],
-            ["./a/b/c/foo.zip", "a/b/c/foo.zip"],
-            ["./a/b/__virtual__/abcdef/0/c/d", "a/b/c/d"],
-            ["./a/b/__virtual__/abcdef/1/c/d", "a/c/d"],
-            ["./a/b/__virtual__/abcdef/0/c/foo.zip/bar", ["a/b/c/foo.zip", "bar"]],
-            ["./a/b/__virtual__/abcdef/1/c/foo.zip/bar", ["a/c/foo.zip", "bar"]],
+            ["foo.zip", null],
+            ["foo.zip/bar", {
+                "basePath": "foo.zip/",
+                "virtualSegments": null,
+                "zipPath": "bar"
+            }],
+            ["foo.zip/bar/baz", {
+                "basePath": "foo.zip/",
+                "virtualSegments": null,
+                "zipPath": "bar/baz"
+            }],
+            ["/a/b/c/foo.zip", null],
+            ["./a/b/c/foo.zip", null],
+            ["./a/b/__virtual__/abcdef/0/c/d", {
+                "basePath": "a/b/",
+                "virtualSegments": ["__virtual__/abcdef/0/c/d", "c/d"],
+                "zipPath": null
+            }],
+            ["./a/b/__virtual__/abcdef/1/c/d", {
+                "basePath": "a/",
+                "virtualSegments": ["b/__virtual__/abcdef/1/c/d", "c/d"],
+                "zipPath": null
+            }],
+            ["./a/b/__virtual__/abcdef/0/c/foo.zip/bar", {
+                "basePath": "a/b/",
+                "virtualSegments": ["__virtual__/abcdef/0/c/foo.zip/", "c/foo.zip/"],
+                "zipPath": "bar"
+            }],
+            ["./a/b/__virtual__/abcdef/1/c/foo.zip/bar", {
+                "basePath": "a/",
+                "virtualSegments": ["b/__virtual__/abcdef/1/c/foo.zip/", "c/foo.zip/"],
+                "zipPath": "bar"
+            }],
             ["./a/b/c/.zip", null],
             ["./a/b/c/foo.zipp", null],
-            ["./a/b/c/foo.zip/bar/baz/qux.zip", ["a/b/c/foo.zip", "bar/baz/qux.zip"]],
-            ["./a/b/c/foo.zip-bar.zip", "a/b/c/foo.zip-bar.zip"],
-            ["./a/b/c/foo.zip-bar.zip/bar/baz/qux.zip", ["a/b/c/foo.zip-bar.zip", "bar/baz/qux.zip"]],
-            ["./a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip/d", ["a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip", "d"]]
+            ["./a/b/c/foo.zip/bar/baz/qux.zip", {
+                "basePath": "a/b/c/foo.zip/",
+                "virtualSegments": null,
+                "zipPath": "bar/baz/qux.zip"
+            }],
+            ["./a/b/c/foo.zip-bar.zip", null],
+            ["./a/b/c/foo.zip-bar.zip/bar/baz/qux.zip", {
+                "basePath": "a/b/c/foo.zip-bar.zip/",
+                "virtualSegments": null,
+                "zipPath": "bar/baz/qux.zip"
+            }],
+            ["./a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip/d", {
+                "basePath": "a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip/",
+                "virtualSegments": null,
+                "zipPath": "d"
+            }]
         ]"#).expect("Assertion failed: Expected the expectations to be loaded");
 
         for (input, expected) in tests.iter() {
             let expectation: VPath = match expected {
                 Some(p) => p.clone(),
-                None => VPath::Native(input.clone()),
+                None => VPath::Native(PathBuf::from(arca::path::normalize_path(input))),
             };
 
-            match vpath(input) {
+            match vpath(&PathBuf::from(input)) {
                 Ok(res) => {
                     assert_eq!(res, expectation, "input='{:?}'", input);
                 }
