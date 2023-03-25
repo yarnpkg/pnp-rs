@@ -21,6 +21,19 @@ pub enum VPath {
     Native(PathBuf),
 }
 
+impl VPath {
+    pub fn physical_path(&self) -> PathBuf {
+        match &self {
+            VPath::Virtual(VPathInfo { base_path, virtual_segments: None, .. })
+                => PathBuf::from(base_path),
+            VPath::Virtual(VPathInfo { base_path, virtual_segments: Some((_virtual_segment, physical_segment)), .. })
+                => PathBuf::from(base_path).join(physical_segment),
+            VPath::Native(p)
+                => p.clone(),
+        }
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Entry not found")]
