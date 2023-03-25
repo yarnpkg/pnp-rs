@@ -246,7 +246,7 @@ pub fn split_zip(p_bytes: &[u8]) -> (&[u8], Option<&[u8]>) {
 
 pub fn split_virtual(p_bytes: &[u8]) -> std::io::Result<(usize, Option<(usize, usize)>)> {
     lazy_static! {
-        static ref VIRTUAL_RE: Regex = Regex::new("(?:^|/)((?:\\$\\$virtual|__virtual__)/[a-f0-9]+/([0-9]+)/)").unwrap();
+        static ref VIRTUAL_RE: Regex = Regex::new("(?:^|/)((?:\\$\\$virtual|__virtual__)/(?:[^/]+)-[a-f0-9]+/([0-9]+)/)").unwrap();
     }
 
     if let Some(m) = VIRTUAL_RE.captures(p_bytes) {
@@ -381,24 +381,24 @@ mod tests {
             }],
             ["/a/b/c/foo.zip", null],
             ["./a/b/c/foo.zip", null],
-            ["./a/b/__virtual__/abcdef/0/c/d", {
+            ["./a/b/__virtual__/foo-abcdef/0/c/d", {
                 "basePath": "a/b",
-                "virtualSegments": ["__virtual__/abcdef/0/c/d", "c/d"],
+                "virtualSegments": ["__virtual__/foo-abcdef/0/c/d", "c/d"],
                 "zipPath": null
             }],
-            ["./a/b/__virtual__/abcdef/1/c/d", {
+            ["./a/b/__virtual__/foo-abcdef/1/c/d", {
                 "basePath": "a",
-                "virtualSegments": ["b/__virtual__/abcdef/1/c/d", "c/d"],
+                "virtualSegments": ["b/__virtual__/foo-abcdef/1/c/d", "c/d"],
                 "zipPath": null
             }],
-            ["./a/b/__virtual__/abcdef/0/c/foo.zip/bar", {
+            ["./a/b/__virtual__/foo-abcdef/0/c/foo.zip/bar", {
                 "basePath": "a/b",
-                "virtualSegments": ["__virtual__/abcdef/0/c/foo.zip", "c/foo.zip"],
+                "virtualSegments": ["__virtual__/foo-abcdef/0/c/foo.zip", "c/foo.zip"],
                 "zipPath": "bar"
             }],
-            ["./a/b/__virtual__/abcdef/1/c/foo.zip/bar", {
+            ["./a/b/__virtual__/foo-abcdef/1/c/foo.zip/bar", {
                 "basePath": "a",
-                "virtualSegments": ["b/__virtual__/abcdef/1/c/foo.zip", "c/foo.zip"],
+                "virtualSegments": ["b/__virtual__/foo-abcdef/1/c/foo.zip", "c/foo.zip"],
                 "zipPath": "bar"
             }],
             ["./a/b/c/.zip", null],
