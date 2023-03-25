@@ -232,9 +232,9 @@ pub fn split_zip(p_bytes: &[u8]) -> (&[u8], Option<&[u8]>) {
                 continue;
             }
     
-            let zip_path = &p_bytes[0..next_char_idx + 1];
+            let zip_path = &p_bytes[0..next_char_idx];
             let sub_path = p_bytes.get(next_char_idx + 1..);
-    
+
             return (zip_path, sub_path);
         } else {
             break;
@@ -300,7 +300,7 @@ pub fn vpath(p: &Path) -> std::io::Result<VPath> {
             return Err(std::io::Error::new(std::io::ErrorKind::Other, "Invalid virtual back-reference"))
         }
 
-        base_path_u8 = &archive_path_u8[0..base_path_len];
+        base_path_u8 = &archive_path_u8[0..base_path_len - 1];
 
         virtual_segments = Some((
             io_bytes_to_str(&archive_path_u8[base_path_len..archive_path_u8.len()])?.to_string(),
@@ -370,52 +370,52 @@ mod tests {
             ["foo", null],
             ["foo.zip", null],
             ["foo.zip/bar", {
-                "basePath": "foo.zip/",
+                "basePath": "foo.zip",
                 "virtualSegments": null,
                 "zipPath": "bar"
             }],
             ["foo.zip/bar/baz", {
-                "basePath": "foo.zip/",
+                "basePath": "foo.zip",
                 "virtualSegments": null,
                 "zipPath": "bar/baz"
             }],
             ["/a/b/c/foo.zip", null],
             ["./a/b/c/foo.zip", null],
             ["./a/b/__virtual__/abcdef/0/c/d", {
-                "basePath": "a/b/",
+                "basePath": "a/b",
                 "virtualSegments": ["__virtual__/abcdef/0/c/d", "c/d"],
                 "zipPath": null
             }],
             ["./a/b/__virtual__/abcdef/1/c/d", {
-                "basePath": "a/",
+                "basePath": "a",
                 "virtualSegments": ["b/__virtual__/abcdef/1/c/d", "c/d"],
                 "zipPath": null
             }],
             ["./a/b/__virtual__/abcdef/0/c/foo.zip/bar", {
-                "basePath": "a/b/",
-                "virtualSegments": ["__virtual__/abcdef/0/c/foo.zip/", "c/foo.zip/"],
+                "basePath": "a/b",
+                "virtualSegments": ["__virtual__/abcdef/0/c/foo.zip", "c/foo.zip"],
                 "zipPath": "bar"
             }],
             ["./a/b/__virtual__/abcdef/1/c/foo.zip/bar", {
-                "basePath": "a/",
-                "virtualSegments": ["b/__virtual__/abcdef/1/c/foo.zip/", "c/foo.zip/"],
+                "basePath": "a",
+                "virtualSegments": ["b/__virtual__/abcdef/1/c/foo.zip", "c/foo.zip"],
                 "zipPath": "bar"
             }],
             ["./a/b/c/.zip", null],
             ["./a/b/c/foo.zipp", null],
             ["./a/b/c/foo.zip/bar/baz/qux.zip", {
-                "basePath": "a/b/c/foo.zip/",
+                "basePath": "a/b/c/foo.zip",
                 "virtualSegments": null,
                 "zipPath": "bar/baz/qux.zip"
             }],
             ["./a/b/c/foo.zip-bar.zip", null],
             ["./a/b/c/foo.zip-bar.zip/bar/baz/qux.zip", {
-                "basePath": "a/b/c/foo.zip-bar.zip/",
+                "basePath": "a/b/c/foo.zip-bar.zip",
                 "virtualSegments": null,
                 "zipPath": "bar/baz/qux.zip"
             }],
             ["./a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip/d", {
-                "basePath": "a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip/",
+                "basePath": "a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip",
                 "virtualSegments": null,
                 "zipPath": "d"
             }]
