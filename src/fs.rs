@@ -50,7 +50,7 @@ fn make_io_utf8_error() -> std::io::Error {
 }
 
 fn io_bytes_to_str(vec: &[u8]) -> Result<&str, std::io::Error> {
-    std::str::from_utf8(&vec)
+    std::str::from_utf8(vec)
         .map_err(|_| make_io_utf8_error())
 }
 
@@ -215,7 +215,7 @@ pub fn split_zip(p_bytes: &[u8]) -> (&[u8], Option<&[u8]>) {
     let mut search_offset = 0;
 
     while search_offset < p_bytes.len() {
-        if let Some(m) = ZIP_RE.find_at(&p_bytes, search_offset) {
+        if let Some(m) = ZIP_RE.find_at(p_bytes, search_offset) {
             let idx = m.start();
             let next_char_idx = m.end();
     
@@ -241,9 +241,9 @@ pub fn split_virtual(p_bytes: &[u8]) -> std::io::Result<(usize, Option<(usize, u
         static ref VIRTUAL_RE: Regex = Regex::new("(?:^|/)((?:\\$\\$virtual|__virtual__)/[a-f0-9]+/([0-9]+)/)").unwrap();
     }
 
-    if let Some(m) = VIRTUAL_RE.captures(&p_bytes) {
+    if let Some(m) = VIRTUAL_RE.captures(p_bytes) {
         if let (Some(main), Some(depth)) = (m.get(1), m.get(2)) {
-            if let Ok(depth_n) = str::parse(io_bytes_to_str(&depth.as_bytes())?) {
+            if let Ok(depth_n) = str::parse(io_bytes_to_str(depth.as_bytes())?) {
                 return Ok((main.start(), Some((main.end() - main.start(), depth_n))));
             }
         }
@@ -254,9 +254,8 @@ pub fn split_virtual(p_bytes: &[u8]) -> std::io::Result<(usize, Option<(usize, u
 
 pub fn vpath(p: &Path) -> std::io::Result<VPath> {
     let p_str = arca::path::normalize_path(
-        p.as_os_str()
+        &p.as_os_str()
             .to_string_lossy()
-            .to_string()
     );
 
     let p_bytes = p_str
@@ -299,7 +298,7 @@ pub fn vpath(p: &Path) -> std::io::Result<VPath> {
             io_bytes_to_str(&archive_path_u8[base_path_len..archive_path_u8.len()])?.to_string(),
             io_bytes_to_str(&archive_path_u8[base_path_len + virtual_len..archive_path_u8.len()])?.to_string(),
         ));
-    } else if let None = zip_path_u8 {
+    } else if zip_path_u8.is_none() {
         return Ok(VPath::Native(PathBuf::from(p_str)));
     }
 

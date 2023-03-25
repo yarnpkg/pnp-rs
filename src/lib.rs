@@ -149,12 +149,10 @@ pub fn find_closest_pnp_manifest_path<P: AsRef<Path>>(p: P) -> Option<PathBuf> {
 
     if pnp_path.exists() {
         Some(pnp_path)
+    } else if let Some(directory_path) = p.as_ref().parent() {
+        find_closest_pnp_manifest_path(directory_path)
     } else {
-        if let Some(directory_path) = p.as_ref().parent() {
-            find_closest_pnp_manifest_path(directory_path)
-        } else {
-            None
-        }
+        None
     }
 }
 
@@ -233,7 +231,7 @@ pub fn init_pnp_manifest<P: AsRef<Path>>(manifest: &mut Manifest, p: P) {
 }
 
 pub fn find_pnp_manifest(parent: &Path) -> Result<Option<Manifest>, Error> {
-    find_closest_pnp_manifest_path(parent).map_or(Ok(None), |p| Ok(Some(load_pnp_manifest(&p)?)))
+    find_closest_pnp_manifest_path(parent).map_or(Ok(None), |p| Ok(Some(load_pnp_manifest(p)?)))
 }
 
 pub fn find_locator<'a, P: AsRef<Path>>(manifest: &'a Manifest, path: &P) -> Option<&'a PackageLocator> {
@@ -270,8 +268,8 @@ pub fn is_excluded_from_fallback(manifest: &Manifest, locator: &PackageLocator) 
 pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, specifier: &str, parent: P) -> Result<Resolution, Error> {
     let (ident, module_path) = parse_bare_identifier(specifier)?;
 
-    if let Some(parent_locator) = find_locator(&manifest, &parent) {
-        let parent_pkg = get_package(&manifest, parent_locator)?;
+    if let Some(parent_locator) = find_locator(manifest, &parent) {
+        let parent_pkg = get_package(manifest, parent_locator)?;
 
         let mut reference_or_alias: Option<PackageDependency> = None;
         let mut is_set = false;
@@ -283,7 +281,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, 
             }
         }
 
-        if !is_set && manifest.enable_top_level_fallback && !is_excluded_from_fallback(&manifest, parent_locator) {
+        if !is_set && manifest.enable_top_level_fallback && !is_excluded_from_fallback(manifest, parent_locator) {
             if let Some(fallback_resolution) = manifest.fallback_pool.get(&ident) {
                 reference_or_alias = fallback_resolution.clone();
                 is_set = true;
@@ -296,13 +294,13 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, 
 
         if let Some(resolution) = reference_or_alias {
             let dependency_pkg = match resolution {
-                PackageDependency::Reference(reference) => get_package(&manifest, &PackageLocator { name: ident, reference }),
-                PackageDependency::Alias(name, reference) => get_package(&manifest, &PackageLocator { name, reference }),
+                PackageDependency::Reference(reference) => get_package(manifest, &PackageLocator { name: ident, reference }),
+                PackageDependency::Alias(name, reference) => get_package(manifest, &PackageLocator { name, reference }),
             }?;
 
-            Ok(Resolution::Package(dependency_pkg.package_location.clone(), module_path.clone()))
+            Ok(Resolution::Package(dependency_pkg.package_location.clone(), module_path))
         } else {
-            return Err(Error::FailedResolution);
+            Err(Error::FailedResolution)
         }
     } else {
         Ok(Resolution::Specifier(specifier.to_string()))
@@ -311,7 +309,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, 
 
 pub fn resolve_to_unqualified<P: AsRef<Path>>(specifier: &str, parent: P, config: &ResolutionConfig) -> Result<Resolution, Error> {
     if let Some(manifest) = (config.host.find_pnp_manifest)(parent.as_ref())? {
-        resolve_to_unqualified_via_manifest(&manifest, &specifier, &parent)
+        resolve_to_unqualified_via_manifest(&manifest, specifier, &parent)
     } else {
         Ok(Resolution::Specifier(specifier.to_string()))
     }
