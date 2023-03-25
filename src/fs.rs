@@ -13,25 +13,20 @@ pub struct VPathInfo {
     pub zip_path: Option<String>,
 }
 
+impl VPathInfo {
+    pub fn physical_base_path(&self) -> PathBuf {
+        match &self.virtual_segments {
+            None => PathBuf::from(&self.base_path),
+            Some(segments) => PathBuf::from(&self.base_path).join(&segments.1),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum VPath {
     Virtual(VPathInfo),
     Native(PathBuf),
-}
-
-impl VPath {
-    pub fn physical_path(&self) -> PathBuf {
-        match &self {
-            VPath::Virtual(VPathInfo { base_path, virtual_segments: None, .. })
-                => PathBuf::from(base_path),
-            VPath::Virtual(VPathInfo { base_path, virtual_segments: Some((_virtual_segment, physical_segment)), .. })
-                => PathBuf::from(base_path).join(physical_segment),
-            VPath::Native(p)
-                => p.clone(),
-        }
-    }
 }
 
 #[derive(thiserror::Error, Debug)]
