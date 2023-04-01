@@ -74,7 +74,7 @@ mod tests {
                         assert_eq!(specifier, test.expected, "{}", test.it);
                     },
                     Err(err) => {
-                        assert_eq!(test.expected, "error!", "{}: {}", test.it, err);
+                        assert_eq!(test.expected, "error!", "{}: {}", test.it, err.to_string());
                     },
                 }
                 

@@ -1,29 +1,74 @@
 pub mod fs;
+
+mod builtins;
 mod util;
+mod zip;
 
 use fancy_regex::Regex;
 use lazy_static::lazy_static;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DefaultOnNull};
 use std::{path::{Path, PathBuf}, collections::{HashSet, HashMap, hash_map::Entry}};
 use util::RegexDef;
 
-#[derive(thiserror::Error, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum Error {
-    #[error("Bad specifier")]
-    BadSpecifier,
+    BadSpecifier {
+        message: String,
 
-    #[error("Bad specifier")]
-    FailedResolution,
+        specifier: String,
+    },
 
-    #[error("Assertion failed: Regular expression failed to run")]
-    Disconnect(#[from] fancy_regex::Error),
+    FailedManifestHydration {
+        message: String,
 
-    #[error(transparent)]
-    JsonError(#[from] serde_json::Error),
+        manifest_path: PathBuf,
+    },
 
-    #[error(transparent)]
-    IOError(#[from] std::io::Error),
+    MissingPeerDependency {
+        message: String,
+        request: String,
+
+        dependency_name: String,
+
+        issuer_locator: PackageLocator,
+        issuer_path: PathBuf,
+
+        broken_ancestors: Vec<PackageLocator>,
+    },
+
+    UndeclaredDependency {
+        message: String,
+        request: String,
+
+        dependency_name: String,
+
+        issuer_locator: PackageLocator,
+        issuer_path: PathBuf,
+    },
+
+    MissingDependency {
+        message: String,
+        request: String,
+
+        dependency_locator: PackageLocator,
+        dependency_name: String,
+
+        issuer_locator: PackageLocator,
+        issuer_path: PathBuf,
+    },
+}
+
+impl ToString for Error {
+    fn to_string(&self) -> String {
+        match &self {
+            Error::BadSpecifier { message, .. } => message.clone(),
+            Error::FailedManifestHydration { message, .. } => message.clone(),
+            Error::MissingPeerDependency { message, .. } => message.clone(),
+            Error::UndeclaredDependency { message, .. } => message.clone(),
+            Error::MissingDependency { message, .. } => message.clone(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -46,21 +91,16 @@ impl Default for ResolutionHost {
 
 #[derive(Default)]
 pub struct ResolutionConfig {
-    pub builtins: HashSet<String>,
     pub host: ResolutionHost,
 }
 
-#[derive(Clone)]
-#[derive(Debug)]
-#[derive(Default)]
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct PackageLocator {
     name: String,
     reference: String,
 }
 
-#[derive(Clone)]
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 enum PackageDependency {
     Reference(String),
@@ -68,8 +108,7 @@ enum PackageDependency {
 }
 
 #[serde_as]
-#[derive(Clone)]
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageInformation {
     package_location: PathBuf,
@@ -82,8 +121,7 @@ pub struct PackageInformation {
 }
 
 #[serde_as]
-#[derive(Clone)]
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     #[serde(skip_deserializing)]
@@ -97,6 +135,12 @@ pub struct Manifest {
 
     enable_top_level_fallback: bool,
     ignore_pattern_data: Option<RegexDef>,
+
+    // dependencyTreeRoots: [{
+    //   "name": "@app/monorepo",
+    //   "workspace:."
+    // }]
+    dependency_tree_roots: HashSet<PackageLocator>,
 
     // fallbackPool: [[
     //   "@app/monorepo",
@@ -140,7 +184,10 @@ pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>)
     if let Some(ident) = ident_option {
         Ok((ident, segments.next().map(|v| v.to_string())))
     } else {
-        Err(Error::BadSpecifier)
+        Err(Error::BadSpecifier{
+            message: String::from("Invalid specifier"),
+            specifier: specifier.to_string(),
+        })
     }
 }
 
@@ -157,14 +204,22 @@ pub fn find_closest_pnp_manifest_path<P: AsRef<Path>>(p: P) -> Option<PathBuf> {
 }
 
 pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
-    let manifest_content = std::fs::read_to_string(p.as_ref())?;
+    let manifest_content = std::fs::read_to_string(p.as_ref())
+        .map_err(|err| Error::FailedManifestHydration {
+            message: format!("We failed to read the content of the manifest.\n\nOriginal error: {}", err.to_string()),
+            manifest_path: p.as_ref().to_path_buf(),
+        })?;
 
     lazy_static! {
         static ref RE: Regex = Regex::new("(const\\s+RAW_RUNTIME_STATE\\s*=\\s*|hydrateRuntimeState\\(JSON\\.parse\\()'").unwrap();
     }
 
-    let manifest_match = RE.find(&manifest_content)?
-        .expect("Should have been able to locate the runtime state payload offset");
+    let manifest_match = RE.find(&manifest_content)
+        .unwrap_or_default()
+        .ok_or_else(|| Error::FailedManifestHydration {
+            message: String::from("We failed to locate the PnP data payload inside its manifest file. Did you manually edit the file?"),
+            manifest_path: p.as_ref().to_path_buf(),
+        })?;
 
     let iter = manifest_content.chars().skip(manifest_match.end());
     let mut json_string = String::default();
@@ -185,7 +240,12 @@ pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
         }
     }
 
-    let mut manifest: Manifest = serde_json::from_str(&json_string.to_owned())?;
+    let mut manifest: Manifest = serde_json::from_str(&json_string.to_owned())
+        .map_err(|err| Error::FailedManifestHydration {
+            message: format!("We failed to parse the PnP data payload as proper JSON; Did you manually edit the file?\n\nOriginal error: {}", err.to_string()),
+            manifest_path: p.as_ref().to_path_buf(),
+        })?;
+
     init_pnp_manifest(&mut manifest, p.as_ref());
 
     Ok(manifest)
@@ -234,6 +294,10 @@ pub fn find_pnp_manifest(parent: &Path) -> Result<Option<Manifest>, Error> {
     find_closest_pnp_manifest_path(parent).map_or(Ok(None), |p| Ok(Some(load_pnp_manifest(p)?)))
 }
 
+pub fn is_dependency_tree_root<'a>(manifest: &'a Manifest, locator: &'a PackageLocator) -> bool {
+    manifest.dependency_tree_roots.contains(locator)
+}
+
 pub fn find_locator<'a, P: AsRef<Path>>(manifest: &'a Manifest, path: &P) -> Option<&'a PackageLocator> {
     let rel_path = pathdiff::diff_paths(path, &manifest.manifest_dir)
         .expect("Assertion failed: Provided path should be absolute");
@@ -265,6 +329,10 @@ pub fn is_excluded_from_fallback(manifest: &Manifest, locator: &PackageLocator) 
     }
 }
 
+pub fn find_broken_peer_dependencies(_dependency: &str, _initial_package: &PackageLocator) -> Vec<PackageLocator> {
+    vec![].to_vec()
+}
+
 pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, specifier: &str, parent: P) -> Result<Resolution, Error> {
     let (ident, module_path) = parse_bare_identifier(specifier)?;
 
@@ -289,7 +357,50 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, 
         }
 
         if !is_set {
-            return Err(Error::FailedResolution);
+            let message = if builtins::is_nodejs_builtin(specifier) {
+                if is_dependency_tree_root(manifest, parent_locator) {
+                    format!(
+                        "Your application tried to access {dependency_name}. While this module is usually interpreted as a Node builtin, your resolver is running inside a non-Node resolution context where such builtins are ignored. Since {dependency_name} isn't otherwise declared in your dependencies, this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: ${issuer_path}",
+                        dependency_name = &ident,
+                        via = if ident != specifier { format!(" (via \"{}\")", &specifier) } else { String::from("") },
+                        issuer_path = parent.as_ref().to_string_lossy(),
+                    )
+                } else {
+                    format!(
+                        "${issuer_locator_name} tried to access {dependency_name}. While this module is usually interpreted as a Node builtin, your resolver is running inside a non-Node resolution context where such builtins are ignored. Since {dependency_name} isn't otherwise declared in ${issuer_locator_name}'s dependencies, this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: ${issuer_path}",
+                        issuer_locator_name = &parent_locator.name,
+                        dependency_name = &ident,
+                        via = if ident != specifier { format!(" (via \"{}\")", &specifier) } else { String::from("") },
+                        issuer_path = parent.as_ref().to_string_lossy(),
+                    )
+                }
+            } else {
+                if is_dependency_tree_root(manifest, parent_locator) {
+                    format!(
+                        "Your application tried to access {dependency_name}, but it isn't declared in your dependencies; this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: {issuer_path}",
+                        dependency_name = &ident,
+                        via = if ident != specifier { format!(" (via \"{}\")", &specifier) } else { String::from("") },
+                        issuer_path = parent.as_ref().to_string_lossy(),
+                    )
+                } else {
+                    format!(
+                        "{issuer_locator_name} tried to access {dependency_name}, but it isn't declared in its dependencies; this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: {issuer_locator_name}@{issuer_locator_reference} (via {issuer_path})",
+                        issuer_locator_name = &parent_locator.name,
+                        issuer_locator_reference = &parent_locator.reference,
+                        dependency_name = &ident,
+                        via = if ident != specifier { format!(" (via \"{}\")", &specifier) } else { String::from("") },
+                        issuer_path = parent.as_ref().to_string_lossy(),
+                    )
+                }
+            };
+
+            return Err(Error::UndeclaredDependency {
+                message,
+                request: specifier.to_string(),
+                dependency_name: ident,
+                issuer_locator: parent_locator.clone(),
+                issuer_path: parent.as_ref().to_path_buf(),
+            });
         }
 
         if let Some(resolution) = reference_or_alias {
@@ -300,7 +411,43 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, 
 
             Ok(Resolution::Package(dependency_pkg.package_location.clone(), module_path))
         } else {
-            Err(Error::FailedResolution)
+            let broken_ancestors = find_broken_peer_dependencies(&specifier, parent_locator);
+
+            let message = if is_dependency_tree_root(manifest, parent_locator) {
+                format!(
+                    "Your application tried to access {dependency_name} (a peer dependency); this isn't allowed as there is no ancestor to satisfy the requirement. Use a devDependency if needed.\n\nRequired package: {dependency_name}{via}\nRequired by: {issuer_path}",
+                    dependency_name = &ident,
+                    via = if ident != specifier { format!(" (via \"{}\")", &specifier) } else { String::from("") },
+                    issuer_path = parent.as_ref().to_string_lossy(),
+                )
+            } else if !broken_ancestors.is_empty() && broken_ancestors.iter().all(|locator| is_dependency_tree_root(manifest, locator)) {
+                format!(
+                    "{issuer_locator_name} tried to access {dependency_name} (a peer dependency) but it isn't provided by your application; this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: {issuer_locator_name}@{issuer_locator_reference} (via {issuer_path})",
+                    issuer_locator_name = &parent_locator.name,
+                    issuer_locator_reference = &parent_locator.reference,
+                    dependency_name = &ident,
+                    via = if ident != specifier { format!(" (via \"{}\")", &specifier) } else { String::from("") },
+                    issuer_path = parent.as_ref().to_string_lossy(),
+                )
+            } else {
+                format!(
+                    "{issuer_locator_name} tried to access {dependency_name} (a peer dependency) but it isn't provided by its ancestors; this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: {issuer_locator_name}@{issuer_locator_reference} (via {issuer_path})",
+                    issuer_locator_name = &parent_locator.name,
+                    issuer_locator_reference = &parent_locator.reference,
+                    dependency_name = &ident,
+                    via = if ident != specifier { format!(" (via \"{}\")", &specifier) } else { String::from("") },
+                    issuer_path = parent.as_ref().to_string_lossy(),
+                )
+            };
+
+            Err(Error::MissingPeerDependency {
+                message,
+                request: specifier.to_string(),
+                dependency_name: ident,
+                issuer_locator: parent_locator.clone(),
+                issuer_path: parent.as_ref().to_path_buf(),
+                broken_ancestors: vec![].to_vec(),
+            })
         }
     } else {
         Ok(Resolution::Specifier(specifier.to_string()))

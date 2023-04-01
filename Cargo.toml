@@ -1,6 +1,6 @@
 [package]
 name = "pnp"
-version = "0.5.4"
+version = "0.6.0"
 edition = "2021"
 license = "BSD-2-Clause"
 description = "Resolution primitives for Yarn PnP"
@@ -9,14 +9,18 @@ repository = "https://github.com/yarnpkg/berry/"
 
 [dependencies]
 arca = "0.1.3"
+byteorder = "1.4.3"
+concurrent_lru = "0.2.0"
 fancy-regex = "0.11.0"
 lazy_static = "1.4.0"
-lru = "0.10.0"
 miniz_oxide = "0.7.1"
+mmap-rs = { version = "0.5.0", optional = true }
 pathdiff = "0.2.1"
 regex = "1.7.1"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
 serde_with = "2.2.0"
 thiserror = "1.0.39"
-zip = { version = "0.6.2", default-features = false }
+
+[features]
+mmap = ["dep:mmap-rs"]

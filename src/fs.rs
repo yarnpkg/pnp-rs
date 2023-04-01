@@ -1,9 +1,9 @@
 use lazy_static::lazy_static;
-use lru::LruCache;
 use regex::bytes::Regex;
 use serde::Deserialize;
-use std::{path::{Path, PathBuf}, fs, io::{BufReader, Read}, collections::{HashSet, HashMap}, str::Utf8Error, num::NonZeroUsize};
-use zip::{ZipArchive, result::ZipError};
+use std::{path::{Path, PathBuf}, str::Utf8Error};
+
+use crate::zip::Zip;
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -45,9 +45,6 @@ pub enum Error {
 
     #[error(transparent)]
     IOError(#[from] std::io::Error),
-
-    #[error(transparent)]
-    ZipError(#[from] ZipError),
 }
 
 fn make_io_utf8_error() -> std::io::Error {
@@ -62,155 +59,93 @@ fn io_bytes_to_str(vec: &[u8]) -> Result<&str, std::io::Error> {
         .map_err(|_| make_io_utf8_error())
 }
 
-pub fn open_zip(p: &Path) -> Result<Zip, std::io::Error> {
+#[cfg(feature = "mmap")]
+pub fn open_zip_via_mmap(p: &Path) -> Result<Zip<mmap_rs::Mmap>, std::io::Error> {
     let file = fs::File::open(p)?;
-    let reader = BufReader::new(file);
 
-    let archive = ZipArchive::new(reader)?;
-    let zip = Zip::new(archive)
+    let mmap_builder = mmap_rs::MmapOptions::new(file.metadata().unwrap().len().try_into().unwrap())
+        .unwrap();
+
+    let mmap = unsafe {
+        mmap_builder
+            .with_file(file, 0)
+            .map()
+            .unwrap()
+    };
+
+    let zip = Zip::new(mmap)
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to read the zip file"))?;
 
     Ok(zip)
 }
 
-pub struct Zip {
-    archive: ZipArchive<BufReader<fs::File>>,
-    files: HashMap<String, usize>,
-    dirs: HashSet<String>,
+pub fn open_zip_via_read(p: &Path) -> Result<Zip<Vec<u8>>, std::io::Error> {
+    let data = std::fs::read(p)?;
+
+    let zip = Zip::new(data)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to read the zip file"))?;
+
+    Ok(zip)
 }
 
-impl Zip {
-    pub fn new(archive: ZipArchive<BufReader<fs::File>>) -> Result<Zip, Error> {
-        let mut zip = Zip {
-            archive,
-            files: Default::default(),
-            dirs: Default::default(),
-        };
+pub trait ZipCache<Storage>
+where Storage : AsRef<[u8]> + Send + Sync {
+    fn act<T, F : FnOnce(&Zip<Storage>) -> T>(&self, p: &Path, cb: F) -> Result<T, std::io::Error>;
 
-        for i in 0..zip.archive.len() {
-            let entry = zip.archive.by_index_raw(i)?;
+    fn canonicalize(&self, zip_path: &Path, sub: &str) -> Result<PathBuf, std::io::Error>;
 
-            let name = arca::path::normalize_path(entry.name());
-            let segments: Vec<&str> = name.split('/').collect();
+    fn is_dir(&self, zip_path: &Path, sub: &str) -> bool;
+    fn is_file(&self, zip_path: &Path, sub: &str) -> bool;
 
-            for t in 1..segments.len() - 1 {
-                let dir = segments[0..t].to_vec().join("/");
-                zip.dirs.insert(dir + "/");
-            }
-
-            if entry.is_dir() {
-                zip.dirs.insert(name);
-            } else if entry.is_file() {
-                zip.files.insert(name, i);
-            }
-        }
-
-        Ok(zip)
-    }
-
-    pub fn is_dir(&self, p: &str) -> bool {
-        self.dirs.contains(p)
-    }
-
-    pub fn is_file(&self, p: &str) -> bool {
-        self.files.contains_key(p)
-    }
-
-    pub fn read(&mut self, p: &str) -> Result<Vec<u8>, std::io::Error> {
-        let i = self.files.get(p)
-            .ok_or(std::io::Error::from(std::io::ErrorKind::NotFound))?;
-
-        let mut entry = self.archive.by_index_raw(*i)?;
-        let mut data = Vec::new();
-
-        entry.read_to_end(&mut data)?;
-
-        match entry.compression() {
-            zip::CompressionMethod::DEFLATE => {
-                let decompressed_data = miniz_oxide::inflate::decompress_to_vec(&data)
-                    .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Error during decompression"))?;
-
-                Ok(decompressed_data)
-            }
-
-            zip::CompressionMethod::STORE => {
-                Ok(data)
-            }
-
-            _ => {
-                Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Unsupported compression algorithm"))
-            }
-        }
-    }
-
-    pub fn read_to_string(&mut self, p: &str) -> Result<String, std::io::Error> {
-        let data = self.read(p)?;
-
-        Ok(io_bytes_to_str(data.as_slice())?.to_string())
-    }
+    fn read(&self, zip_path: &Path, sub: &str) -> Result<Vec<u8>, std::io::Error>;
+    fn read_to_string(&self, zip_path: &Path, sub: &str) -> Result<String, std::io::Error>;
 }
 
-pub trait ZipCache {
-    fn act<T, F : FnOnce(&mut Zip) -> T>(&mut self, p: &Path, cb: F) -> Result<T, std::io::Error>;
-
-    fn canonicalize(&mut self, zip_path: &Path, sub: &str) -> Result<PathBuf, std::io::Error>;
-
-    fn is_dir(&mut self, zip_path: &Path, sub: &str) -> bool;
-    fn is_file(&mut self, zip_path: &Path, sub: &str) -> bool;
-
-    fn read(&mut self, zip_path: &Path, sub: &str) -> Result<Vec<u8>, std::io::Error>;
-    fn read_to_string(&mut self, zip_path: &Path, sub: &str) -> Result<String, std::io::Error>;
+pub struct LruZipCache<Storage>
+where Storage : AsRef<[u8]> + Send + Sync {
+    lru: concurrent_lru::sharded::LruCache<PathBuf, Zip<Storage>>,
+    open: fn(&Path) -> std::io::Result<Zip<Storage>>,
 }
 
-pub struct LruZipCache {
-    lru: LruCache<PathBuf, Zip>,
-}
-
-impl Default for LruZipCache {
-    fn default() -> LruZipCache {
-        LruZipCache::new(50)
-    }
-}
-
-impl LruZipCache {
-    pub fn new(n: usize) -> LruZipCache {
+impl<Storage> LruZipCache<Storage>
+where Storage : AsRef<[u8]> + Send + Sync {
+    pub fn new(n: u64, open: fn(&Path) -> std::io::Result<Zip<Storage>>) -> LruZipCache<Storage> {
         LruZipCache {
-            lru: LruCache::new(NonZeroUsize::new(n).unwrap()),
+            lru: concurrent_lru::sharded::LruCache::new(n),
+            open,
         }
     }
 }
 
-impl ZipCache for LruZipCache {
-    fn act<T, F : FnOnce(&mut Zip) -> T>(&mut self, p: &Path, cb: F) -> Result<T, std::io::Error> {
-        if let Some(zip) = self.lru.get_mut(p) {
-            return Ok(cb(zip));
-        }
+impl<Storage> ZipCache<Storage> for LruZipCache<Storage>
+where Storage : AsRef<[u8]> + Send + Sync {
+    fn act<T, F : FnOnce(&Zip<Storage>) -> T>(&self, p: &Path, cb: F) -> Result<T, std::io::Error> {
+        let zip = self.lru.get_or_try_init(p.to_path_buf(), 1, |p| {
+            (self.open)(&p)
+        })?;
 
-        let zip = open_zip(p)?;
-        self.lru.put(p.to_owned(), zip);
-
-        Ok(cb(self.lru.get_mut(p).unwrap()))
+        Ok(cb(zip.value()))
     }
 
-    fn canonicalize(&mut self, zip_path: &Path, sub: &str) -> Result<PathBuf, std::io::Error> {
+    fn canonicalize(&self, zip_path: &Path, sub: &str) -> Result<PathBuf, std::io::Error> {
         let res = std::fs::canonicalize(zip_path)?;
 
         Ok(res.join(sub))
     }
 
-    fn is_dir(&mut self, zip_path: &Path, p: &str) -> bool {
+    fn is_dir(&self, zip_path: &Path, p: &str) -> bool {
         self.act(zip_path, |zip| zip.is_dir(p)).unwrap_or(false)
     }
 
-    fn is_file(&mut self, zip_path: &Path, p: &str) -> bool {
+    fn is_file(&self, zip_path: &Path, p: &str) -> bool {
         self.act(zip_path, |zip| zip.is_file(p)).unwrap_or(false)
     }
 
-    fn read(&mut self, zip_path: &Path, p: &str) -> Result<Vec<u8>, std::io::Error> {
+    fn read(&self, zip_path: &Path, p: &str) -> Result<Vec<u8>, std::io::Error> {
         self.act(zip_path, |zip| zip.read(p))?
     }
 
-    fn read_to_string(&mut self, zip_path: &Path, p: &str) -> Result<String, std::io::Error> {
+    fn read_to_string(&self, zip_path: &Path, p: &str) -> Result<String, std::io::Error> {
         self.act(zip_path, |zip| zip.read_to_string(p))?
     }
 }
@@ -328,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_zip_list() {
-        let zip = open_zip(&PathBuf::from("data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip"))
+        let zip = open_zip_via_read(&PathBuf::from("data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip"))
             .unwrap();
 
         let mut dirs: Vec<&String> = zip.dirs.iter().collect();
@@ -354,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_zip_read() {
-        let mut zip = open_zip(&PathBuf::from("data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip"))
+        let zip = open_zip_via_read(&PathBuf::from("data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip"))
             .unwrap();
 
         let res = zip.read_to_string("node_modules/@babel/plugin-syntax-dynamic-import/package.json")
