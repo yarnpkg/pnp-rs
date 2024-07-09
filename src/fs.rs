@@ -84,6 +84,12 @@ pub fn open_zip_via_mmap<P: AsRef<Path>>(p: P) -> Result<Zip<mmap_rs::Mmap>, std
 
     Ok(zip)
 }
+
+#[cfg(feature = "mmap")]
+pub fn open_zip_via_mmap_p(p: &Path) -> Result<Zip<mmap_rs::Mmap>, std::io::Error> {
+    open_zip_via_mmap(p)
+}
+
 pub fn open_zip_via_read<P: AsRef<Path>>(p: P) -> Result<Zip<Vec<u8>>, std::io::Error> {
     let data = std::fs::read(p)?;
 
@@ -91,6 +97,10 @@ pub fn open_zip_via_read<P: AsRef<Path>>(p: P) -> Result<Zip<Vec<u8>>, std::io::
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to read the zip file"))?;
 
     Ok(zip)
+}
+
+pub fn open_zip_via_read_p(p: &Path) -> Result<Zip<Vec<u8>>, std::io::Error> {
+    open_zip_via_read(p)
 }
 
 pub trait ZipCache<Storage>

@@ -97,7 +97,7 @@ use pnp::fs::{VPath, LruZipCache, open_zip_via_read};
 
 const ZIP_CACHE: Lazy<LruZipCache<Vec<u8>>> = Lazy::new(|| {
     // It'll keep the last 50 zip archives open
-    LruZipCache::new(50, open_zip_via_read)
+    LruZipCache::new(50, open_zip_via_read_p)
 });
 
 fn read_file(p: PathBuf) -> std::io::Result<String> {
