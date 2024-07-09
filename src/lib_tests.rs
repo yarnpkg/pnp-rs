@@ -45,16 +45,16 @@ mod tests {
         );
 
         match resolution {
-            Ok(Resolution::Package(path, subpath)) => {
+            Ok(Resolution::Package(_path, _subpath)) => {
                 // path = "/path/to/lodash.zip"
                 // subpath = "cloneDeep"
             },
-            Ok(Resolution::Specifier(specifier)) => {
+            Ok(Resolution::Specifier(_specifier)) => {
                 // This is returned when the PnP resolver decides that it shouldn't
                 // handle the resolution for this particular specifier. In that case,
                 // the specifier should be forwarded to the default resolver.
             },
-            Err(err) => {
+            Err(_err) => {
                 // An error happened during the resolution. Falling back to the default
                 // resolver isn't recommended.
             },

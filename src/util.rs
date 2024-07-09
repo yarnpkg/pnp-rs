@@ -1,6 +1,6 @@
 use fancy_regex::Regex;
 use serde::{de::Error, Deserialize, Deserializer};
-use std::{borrow::Cow};
+use std::borrow::Cow;
 
 fn strip_slash_escape(str: &str) -> String {
     let mut res = String::default();
@@ -26,7 +26,7 @@ fn strip_slash_escape(str: &str) -> String {
     res
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RegexDef(pub Regex);
 
 impl<'de> Deserialize<'de> for RegexDef {

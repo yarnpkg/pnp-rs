@@ -106,6 +106,7 @@ where Storage: AsRef<[u8]> + Send + Sync {
     fn read_to_string<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<String, std::io::Error>;
 }
 
+#[derive(Debug)]
 pub struct LruZipCache<Storage>
 where Storage: AsRef<[u8]> + Send + Sync {
     lru: concurrent_lru::sharded::LruCache<PathBuf, Zip<Storage>>,

@@ -121,7 +121,7 @@ pub struct PackageInformation {
 }
 
 #[serde_as]
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     #[serde(skip_deserializing)]

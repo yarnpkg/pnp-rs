@@ -17,6 +17,7 @@ pub struct Entry {
     pub size: usize,
 }
 
+#[derive(Debug)]
 pub struct Zip<T> where T : AsRef<[u8]> {
     storage: T,
     pub files: HashMap<String, Entry>,
