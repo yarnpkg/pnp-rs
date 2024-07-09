@@ -29,6 +29,12 @@ pub enum VPath {
     Native(PathBuf),
 }
 
+impl VPath {
+    pub fn from(p: &Path) -> std::io::Result<VPath> {
+        vpath(p)
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Entry not found")]
@@ -60,7 +66,7 @@ fn io_bytes_to_str(vec: &[u8]) -> Result<&str, std::io::Error> {
 }
 
 #[cfg(feature = "mmap")]
-pub fn open_zip_via_mmap(p: &Path) -> Result<Zip<mmap_rs::Mmap>, std::io::Error> {
+pub fn open_zip_via_mmap<P: AsRef<Path>>(p: P) -> Result<Zip<mmap_rs::Mmap>, std::io::Error> {
     let file = fs::File::open(p)?;
 
     let mmap_builder = mmap_rs::MmapOptions::new(file.metadata().unwrap().len().try_into().unwrap())
@@ -78,8 +84,7 @@ pub fn open_zip_via_mmap(p: &Path) -> Result<Zip<mmap_rs::Mmap>, std::io::Error>
 
     Ok(zip)
 }
-
-pub fn open_zip_via_read(p: &Path) -> Result<Zip<Vec<u8>>, std::io::Error> {
+pub fn open_zip_via_read<P: AsRef<Path>>(p: P) -> Result<Zip<Vec<u8>>, std::io::Error> {
     let data = std::fs::read(p)?;
 
     let zip = Zip::new(data)
@@ -89,26 +94,26 @@ pub fn open_zip_via_read(p: &Path) -> Result<Zip<Vec<u8>>, std::io::Error> {
 }
 
 pub trait ZipCache<Storage>
-where Storage : AsRef<[u8]> + Send + Sync {
-    fn act<T, F : FnOnce(&Zip<Storage>) -> T>(&self, p: &Path, cb: F) -> Result<T, std::io::Error>;
+where Storage: AsRef<[u8]> + Send + Sync {
+    fn act<T, P: AsRef<Path>, F : FnOnce(&Zip<Storage>) -> T>(&self, p: P, cb: F) -> Result<T, std::io::Error>;
 
-    fn canonicalize(&self, zip_path: &Path, sub: &str) -> Result<PathBuf, std::io::Error>;
+    fn canonicalize<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<PathBuf, std::io::Error>;
 
-    fn is_dir(&self, zip_path: &Path, sub: &str) -> bool;
-    fn is_file(&self, zip_path: &Path, sub: &str) -> bool;
+    fn is_dir<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> bool;
+    fn is_file<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> bool;
 
-    fn read(&self, zip_path: &Path, sub: &str) -> Result<Vec<u8>, std::io::Error>;
-    fn read_to_string(&self, zip_path: &Path, sub: &str) -> Result<String, std::io::Error>;
+    fn read<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<Vec<u8>, std::io::Error>;
+    fn read_to_string<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<String, std::io::Error>;
 }
 
 pub struct LruZipCache<Storage>
-where Storage : AsRef<[u8]> + Send + Sync {
+where Storage: AsRef<[u8]> + Send + Sync {
     lru: concurrent_lru::sharded::LruCache<PathBuf, Zip<Storage>>,
     open: fn(&Path) -> std::io::Result<Zip<Storage>>,
 }
 
 impl<Storage> LruZipCache<Storage>
-where Storage : AsRef<[u8]> + Send + Sync {
+where Storage: AsRef<[u8]> + Send + Sync {
     pub fn new(n: u64, open: fn(&Path) -> std::io::Result<Zip<Storage>>) -> LruZipCache<Storage> {
         LruZipCache {
             lru: concurrent_lru::sharded::LruCache::new(n),
@@ -118,39 +123,39 @@ where Storage : AsRef<[u8]> + Send + Sync {
 }
 
 impl<Storage> ZipCache<Storage> for LruZipCache<Storage>
-where Storage : AsRef<[u8]> + Send + Sync {
-    fn act<T, F : FnOnce(&Zip<Storage>) -> T>(&self, p: &Path, cb: F) -> Result<T, std::io::Error> {
-        let zip = self.lru.get_or_try_init(p.to_path_buf(), 1, |p| {
+where Storage: AsRef<[u8]> + Send + Sync {
+    fn act<T, P: AsRef<Path>, F: FnOnce(&Zip<Storage>) -> T>(&self, p: P, cb: F) -> Result<T, std::io::Error> {
+        let zip = self.lru.get_or_try_init(p.as_ref().to_path_buf(), 1, |p| {
             (self.open)(&p)
         })?;
 
         Ok(cb(zip.value()))
     }
 
-    fn canonicalize(&self, zip_path: &Path, sub: &str) -> Result<PathBuf, std::io::Error> {
+    fn canonicalize<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<PathBuf, std::io::Error> {
         let res = std::fs::canonicalize(zip_path)?;
 
-        Ok(res.join(sub))
+        Ok(res.join(sub.as_ref()))
     }
 
-    fn is_dir(&self, zip_path: &Path, p: &str) -> bool {
-        self.act(zip_path, |zip| zip.is_dir(p)).unwrap_or(false)
+    fn is_dir<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, p: S) -> bool {
+        self.act(zip_path, |zip| zip.is_dir(p.as_ref())).unwrap_or(false)
     }
 
-    fn is_file(&self, zip_path: &Path, p: &str) -> bool {
-        self.act(zip_path, |zip| zip.is_file(p)).unwrap_or(false)
+    fn is_file<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, p: S) -> bool {
+        self.act(zip_path, |zip| zip.is_file(p.as_ref())).unwrap_or(false)
     }
 
-    fn read(&self, zip_path: &Path, p: &str) -> Result<Vec<u8>, std::io::Error> {
-        self.act(zip_path, |zip| zip.read(p))?
+    fn read<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, p: S) -> Result<Vec<u8>, std::io::Error> {
+        self.act(zip_path, |zip| zip.read(p.as_ref()))?
     }
 
-    fn read_to_string(&self, zip_path: &Path, p: &str) -> Result<String, std::io::Error> {
-        self.act(zip_path, |zip| zip.read_to_string(p))?
+    fn read_to_string<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, p: S) -> Result<String, std::io::Error> {
+        self.act(zip_path, |zip| zip.read_to_string(p.as_ref()))?
     }
 }
 
-pub fn split_zip(p_bytes: &[u8]) -> (&[u8], Option<&[u8]>) {
+fn split_zip(p_bytes: &[u8]) -> (&[u8], Option<&[u8]>) {
     lazy_static! {
         static ref ZIP_RE: Regex = Regex::new(r"\.zip").unwrap();
     }
@@ -179,7 +184,7 @@ pub fn split_zip(p_bytes: &[u8]) -> (&[u8], Option<&[u8]>) {
     (p_bytes, None)
 }
 
-pub fn split_virtual(p_bytes: &[u8]) -> std::io::Result<(usize, Option<(usize, usize)>)> {
+fn split_virtual(p_bytes: &[u8]) -> std::io::Result<(usize, Option<(usize, usize)>)> {
     lazy_static! {
         static ref VIRTUAL_RE: Regex = Regex::new("(?:^|/)((?:\\$\\$virtual|__virtual__)/(?:[^/]+)-[a-f0-9]+/([0-9]+)/)").unwrap();
     }
@@ -195,7 +200,7 @@ pub fn split_virtual(p_bytes: &[u8]) -> std::io::Result<(usize, Option<(usize, u
     Ok((p_bytes.len(), None))
 }
 
-pub fn vpath(p: &Path) -> std::io::Result<VPath> {
+fn vpath(p: &Path) -> std::io::Result<VPath> {
     let p_str = arca::path::normalize_path(
         &p.as_os_str()
             .to_string_lossy()
