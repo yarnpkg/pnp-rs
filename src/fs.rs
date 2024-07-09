@@ -5,16 +5,33 @@ use std::{path::{Path, PathBuf}, str::Utf8Error};
 
 use crate::zip::Zip;
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct VPathInfo {
-    pub base_path: String,
-    pub virtual_segments: Option<(String, String)>,
-    pub zip_path: Option<String>,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileType {
+    File,
+    Directory,
 }
 
-impl VPathInfo {
-    pub fn physical_base_path(&self) -> PathBuf {
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ZipInfo {
+    pub base_path: String,
+    pub virtual_segments: Option<(String, String)>,
+    pub zip_path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VirtualInfo {
+    pub base_path: String,
+    pub virtual_segments: (String, String),
+}
+
+pub trait VPathInfo {
+    fn physical_base_path(&self) -> PathBuf;
+}
+
+impl VPathInfo for ZipInfo {
+    fn physical_base_path(&self) -> PathBuf {
         match &self.virtual_segments {
             None => PathBuf::from(&self.base_path),
             Some(segments) => PathBuf::from(&self.base_path).join(&segments.1),
@@ -22,10 +39,17 @@ impl VPathInfo {
     }
 }
 
+impl VPathInfo for VirtualInfo {
+    fn physical_base_path(&self) -> PathBuf {
+        PathBuf::from(&self.base_path).join(&self.virtual_segments.1)
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum VPath {
-    Virtual(VPathInfo),
+    Zip(ZipInfo),
+    Virtual(VirtualInfo),
     Native(PathBuf),
 }
 
@@ -107,11 +131,7 @@ pub trait ZipCache<Storage>
 where Storage: AsRef<[u8]> + Send + Sync {
     fn act<T, P: AsRef<Path>, F : FnOnce(&Zip<Storage>) -> T>(&self, p: P, cb: F) -> Result<T, std::io::Error>;
 
-    fn canonicalize<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<PathBuf, std::io::Error>;
-
-    fn is_dir<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> bool;
-    fn is_file<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> bool;
-
+    fn file_type<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<FileType, std::io::Error>;
     fn read<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<Vec<u8>, std::io::Error>;
     fn read_to_string<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<String, std::io::Error>;
 }
@@ -143,18 +163,8 @@ where Storage: AsRef<[u8]> + Send + Sync {
         Ok(cb(zip.value()))
     }
 
-    fn canonicalize<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<PathBuf, std::io::Error> {
-        let res = std::fs::canonicalize(zip_path)?;
-
-        Ok(res.join(sub.as_ref()))
-    }
-
-    fn is_dir<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, p: S) -> bool {
-        self.act(zip_path, |zip| zip.is_dir(p.as_ref())).unwrap_or(false)
-    }
-
-    fn is_file<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, p: S) -> bool {
-        self.act(zip_path, |zip| zip.is_file(p.as_ref())).unwrap_or(false)
+    fn file_type<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, p: S) -> Result<FileType, std::io::Error> {
+        self.act(zip_path, |zip| zip.file_type(p.as_ref()))?
     }
 
     fn read<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, p: S) -> Result<Vec<u8>, std::io::Error> {
@@ -261,13 +271,18 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
         return Ok(VPath::Native(PathBuf::from(p_str)));
     }
 
-    Ok(VPath::Virtual(VPathInfo {
-        base_path: io_bytes_to_str(base_path_u8)?.to_string(),
-        virtual_segments,
-        zip_path: zip_path_u8.map(|data| {
-            io_bytes_to_str(data).map(|str| str.to_string())
-        }).transpose()?,
-    }))
+    if let Some(zip_path_u8) = zip_path_u8 {
+        Ok(VPath::Zip(ZipInfo {
+            base_path: io_bytes_to_str(base_path_u8)?.to_string(),
+            virtual_segments,
+            zip_path: io_bytes_to_str(zip_path_u8)?.to_string(),
+        }))
+    } else {
+        Ok(VPath::Virtual(VirtualInfo {
+            base_path: io_bytes_to_str(base_path_u8)?.to_string(),
+            virtual_segments: virtual_segments.unwrap(),
+        }))
+    }
 }
 
 #[cfg(test)]

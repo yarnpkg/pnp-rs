@@ -45,11 +45,11 @@ mod tests {
         );
 
         match resolution {
-            Ok(Resolution::Package(_path, _subpath)) => {
+            Ok(Resolution::Resolved(_path, _subpath)) => {
                 // path = "/path/to/lodash.zip"
                 // subpath = "cloneDeep"
             },
-            Ok(Resolution::Specifier(_specifier)) => {
+            Ok(Resolution::Skipped) => {
                 // This is returned when the PnP resolver decides that it shouldn't
                 // handle the resolution for this particular specifier. In that case,
                 // the specifier should be forwarded to the default resolver.
@@ -105,11 +105,11 @@ mod tests {
                 let resolution = resolve_to_unqualified(specifier, parent, &config);
 
                 match resolution {
-                    Ok(Resolution::Package(path, _subpath)) => {
+                    Ok(Resolution::Resolved(path, _subpath)) => {
                         assert_eq!(path.to_string_lossy(), test.expected, "{}", test.it);
                     },
-                    Ok(Resolution::Specifier(specifier)) => {
-                        assert_eq!(specifier, test.expected, "{}", test.it);
+                    Ok(Resolution::Skipped) => {
+                        assert_eq!(specifier, &test.expected, "{}", test.it);
                     },
                     Err(err) => {
                         assert_eq!(test.expected, "error!", "{}: {}", test.it, err.to_string());

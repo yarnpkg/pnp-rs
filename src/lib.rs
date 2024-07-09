@@ -73,8 +73,8 @@ impl ToString for Error {
 
 #[derive(Debug)]
 pub enum Resolution {
-    Specifier(String),
-    Package(PathBuf, Option<String>),
+    Resolved(PathBuf, Option<String>),
+    Skipped,
 }
 
 pub struct ResolutionHost {
@@ -409,7 +409,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, 
                 PackageDependency::Alias(name, reference) => get_package(manifest, &PackageLocator { name, reference }),
             }?;
 
-            Ok(Resolution::Package(dependency_pkg.package_location.clone(), module_path))
+            Ok(Resolution::Resolved(dependency_pkg.package_location.clone(), module_path))
         } else {
             let broken_ancestors = find_broken_peer_dependencies(&specifier, parent_locator);
 
@@ -450,7 +450,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(manifest: &Manifest, 
             })
         }
     } else {
-        Ok(Resolution::Specifier(specifier.to_string()))
+        Ok(Resolution::Skipped)
     }
 }
 
@@ -458,7 +458,7 @@ pub fn resolve_to_unqualified<P: AsRef<Path>>(specifier: &str, parent: P, config
     if let Some(manifest) = (config.host.find_pnp_manifest)(parent.as_ref())? {
         resolve_to_unqualified_via_manifest(&manifest, specifier, &parent)
     } else {
-        Ok(Resolution::Specifier(specifier.to_string()))
+        Ok(Resolution::Skipped)
     }
 }
 

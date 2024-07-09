@@ -32,11 +32,11 @@ fn example() {
     );
 
     match resolution {
-        Ok(Resolution::Package(path, subpath)) => {
+        Ok(Resolution::Resolved(path, subpath)) => {
             // path = "/path/to/lodash.zip"
             // subpath = "cloneDeep"
         },
-        Ok(Resolution::Specifier(specifier)) => {
+        Ok(Resolution::Skipped) => {
             // This is returned when the PnP resolver decides that it shouldn't
             // handle the resolution for this particular specifier. In that case,
             // the specifier should be forwarded to the default resolver.
@@ -64,20 +64,15 @@ use pnp::fs::{VPath, open_zip_via_read};
 
 fn read_file(p: PathBuf) -> std::io::Result<String> {
     match VPath::from(&p).unwrap() {
+        // The path was virtual and stored within a zip file; we need to read from the zip file
+        // Note that this opens the zip file every time, which is expensive; we'll see how to optimize that
+        VPath::Zip(info) => {
+            open_zip_via_read(info.physical_base_path()).unwrap().read_to_string(&zip_path)
+        },
+
+        // The path was virtual but not a zip file; we just need to read from the provided location
         VPath::Virtual(info) => {
-            let physical_path
-                = info.physical_base_path();
-
-            match &info.zip_path {
-                // The path was virtual and stored within a zip file; we need to read from the zip file
-                // Note that this opens the zip file every time, which is expensive; we'll see how to optimize that
-                Some(zip_path) => open_zip_via_read(&physical_path)
-                        .unwrap()
-                        .read_to_string(&zip_path),
-
-                // The path was virtual but not a zip file; we just need to read from the provided location
-                None => std::fs::read_to_string(info.physical_base_path())
-            }
+            std::fs::read_to_string(info.physical_base_path())
         },
 
         // Nothing special to do, it's a regular path
@@ -102,17 +97,14 @@ const ZIP_CACHE: Lazy<LruZipCache<Vec<u8>>> = Lazy::new(|| {
 
 fn read_file(p: PathBuf) -> std::io::Result<String> {
     match VPath::from(&p).unwrap() {
+        // The path was virtual and stored within a zip file; we need to read from the zip file
+        VPath::Zip(info) => {
+            ZIP_CACHE.read_to_string(info.physical_base_path(), &zip_path)
+        },
+
+        // The path was virtual but not a zip file; we just need to read from the provided location
         VPath::Virtual(info) => {
-            let physical_path
-                = info.physical_base_path();
-
-            match &info.zip_path {
-                // The path was virtual and stored within a zip file; we need to read from the zip file
-                Some(zip_path) => ZIP_CACHE.read_to_string(info.physical_base_path()),
-
-                // The path was virtual but not a zip file; we just need to read from the provided location
-                None => std::fs::read_to_string(info.physical_base_path())
-            }
+            std::fs::read_to_string(info.physical_base_path())
         },
 
         // Nothing special to do, it's a regular path

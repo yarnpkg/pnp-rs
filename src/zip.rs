@@ -4,6 +4,8 @@ use std::error::Error;
 use byteorder::{ReadBytesExt, LittleEndian};
 use std::io::Read;
 
+use crate::fs::FileType;
+
 #[derive(Debug)]
 pub enum Compression {
     Uncompressed,
@@ -52,12 +54,14 @@ where T : AsRef<[u8]> {
         Ok(zip)
     }
 
-    pub fn is_dir(&self, p: &str) -> bool {
-        self.dirs.contains(p)
-    }
-
-    pub fn is_file(&self, p: &str) -> bool {
-        self.files.contains_key(p)
+    pub fn file_type(&self, p: &str) -> Result<FileType, std::io::Error> {
+        if self.dirs.contains(p) {
+            Ok(FileType::Directory)
+        } else if self.files.contains_key(p) {
+            Ok(FileType::File)
+        } else {
+            Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+        }
     }
 
     pub fn read(&self, p: &str) -> Result<Vec<u8>, std::io::Error> {
