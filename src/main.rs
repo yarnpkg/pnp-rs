@@ -24,11 +24,11 @@ fn main() {
     match resolution {
         Ok(res) => {
             match res {
-                Resolution::Package(p, subpath) => {
+                Resolution::Resolved(p, subpath) => {
                     println!("result    = Package ({:?}, {:?})", p, subpath);
                 }
-                Resolution::Specifier(specifier) => {
-                    println!("result    = Specifier ({})", specifier);
+                Resolution::Skipped => {
+                    println!("result    = Skipped");
                 }
             }
         }
