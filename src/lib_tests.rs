@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::{ResolutionConfig, Resolution, Manifest};
+use crate::{Manifest, Resolution, ResolutionConfig};
 
 #[derive(Deserialize)]
 struct Test {
@@ -20,8 +20,11 @@ struct TestSuite {
 mod tests {
     use std::{fs, path::PathBuf};
 
-    use crate::{init_pnp_manifest, load_pnp_manifest, resolve_to_unqualified, ResolutionHost};
     use super::*;
+    use crate::{
+        init_pnp_manifest, load_pnp_manifest, resolve_to_unqualified,
+        resolve_to_unqualified_via_manifest, ResolutionHost,
+    };
 
     #[test]
     fn example() {
@@ -116,6 +119,33 @@ mod tests {
                     },
                 }
                 
+            }
+        }
+    }
+
+    #[test]
+    fn test_edge_case_one_pkg_cached_and_unplugged() {
+        let manifest = {
+            let manifest_json_path = std::env::current_dir().unwrap().join("./data/edge_case_manifest_state.json");
+            let manifest_content = fs::read_to_string(&manifest_json_path).unwrap();
+            let mut manifest = serde_json::from_str::<Manifest>(&manifest_content).unwrap();
+            init_pnp_manifest(&mut manifest, manifest_json_path);
+            manifest
+        };
+
+        let issuer = std::env::current_dir().unwrap().
+            join("data/.yarn/unplugged/@carbon-icons-react-virtual-379302d360/node_modules/@carbon/icons-react/es/");
+
+        let resolution =
+            resolve_to_unqualified_via_manifest(&manifest, "@carbon/icon-helpers", &issuer)
+                .unwrap();
+
+        match resolution {
+            Resolution::Resolved(resolved, _) => {
+                assert!(resolved.ends_with(".yarn/unplugged/@carbon-icon-helpers-npm-10.54.0-a58f8b7b6c/node_modules/@carbon/icon-helpers"))
+            }
+            _ => {
+                panic!("Unexpected resolve failed");
             }
         }
     }

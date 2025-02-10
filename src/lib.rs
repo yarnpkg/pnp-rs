@@ -5,6 +5,7 @@ mod util;
 mod zip;
 
 use fancy_regex::Regex;
+use indexmap::IndexMap;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DefaultOnNull};
@@ -164,7 +165,7 @@ pub struct Manifest {
     //   }]
     // ]
     #[serde_as(as = "Vec<(DefaultOnNull<_>, Vec<(DefaultOnNull<_>, _)>)>")]
-    package_registry_data: HashMap<String, HashMap<String, PackageInformation>>,
+    package_registry_data: HashMap<String, IndexMap<String, PackageInformation>>,
 }
 
 pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>), Error> {
@@ -184,7 +185,7 @@ pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>)
     if let Some(ident) = ident_option {
         Ok((ident, segments.next().map(|v| v.to_string())))
     } else {
-        Err(Error::BadSpecifier{
+        Err(Error::BadSpecifier {
             message: String::from("Invalid specifier"),
             specifier: specifier.to_string(),
         })
