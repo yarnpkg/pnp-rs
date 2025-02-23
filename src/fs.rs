@@ -293,6 +293,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_zip_type_api() {
+        let zip = open_zip_via_read(&PathBuf::from(
+            "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
+        ))
+        .unwrap();
+
+        assert_eq!(zip.file_type("node_modules").unwrap(), FileType::Directory);
+        assert_eq!(zip.file_type("node_modules/").unwrap(), FileType::Directory);
+    }
+
+    #[test]
+    #[should_panic(expected = "Kind(NotFound)")]
+    fn test_zip_type_api_not_exist_dir_with_slash() {
+        let zip = open_zip_via_read(&PathBuf::from(
+            "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
+        ))
+        .unwrap();
+
+        zip.file_type("not_exists/").unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Kind(NotFound)")]
+    fn test_zip_type_api_not_exist_dir_without_slash() {
+        let zip = open_zip_via_read(&PathBuf::from(
+            "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
+        ))
+        .unwrap();
+
+        zip.file_type("not_exists").unwrap();
+    }
+
+    #[test]
     fn test_zip_list() {
         let zip = open_zip_via_read(&PathBuf::from("data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip"))
             .unwrap();
