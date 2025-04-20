@@ -55,12 +55,20 @@ where T : AsRef<[u8]> {
     }
 
     pub fn file_type(&self, p: &str) -> Result<FileType, std::io::Error> {
-        if self.dirs.contains(p) {
+        if self.is_dir(p) {
             Ok(FileType::Directory)
         } else if self.files.contains_key(p) {
             Ok(FileType::File)
         } else {
             Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+        }
+    }
+
+    fn is_dir(&self, p: &str) -> bool {
+        if p.ends_with('/') {
+            self.dirs.contains(p)
+        } else {
+            self.dirs.contains(&format!("{}/", p))
         }
     }
 
