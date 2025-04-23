@@ -18,6 +18,7 @@ miniz_oxide = "^0.7"
 mmap-rs = { version = "^0.6", optional = true }
 pathdiff = "^0.2"
 regex = "1"
+rstest = "0.25.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_with = {  version = "3", features = ["indexmap_2"] }
