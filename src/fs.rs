@@ -400,6 +400,16 @@ mod tests {
                 "virtualSegments": ["b/__virtual__/foo-abcdef/1/c/foo.zip", "c/foo.zip"],
                 "zipPath": "bar"
             }],
+            ["/a/b/__virtual__/foo-abcdef/1/c/foo.zip/bar", {
+                "basePath": "/a",
+                "virtualSegments": ["b/__virtual__/foo-abcdef/1/c/foo.zip", "c/foo.zip"],
+                "zipPath": "bar"
+            }],
+            ["/a/b/__virtual__/foo-abcdef/2/c/foo.zip/bar", {
+                "basePath": "/",
+                "virtualSegments": ["a/b/__virtual__/foo-abcdef/2/c/foo.zip", "c/foo.zip"],
+                "zipPath": "bar"
+            }],
             ["./a/b/c/.zip", null],
             ["./a/b/c/foo.zipp", null],
             ["./a/b/c/foo.zip/bar/baz/qux.zip", {
