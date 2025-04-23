@@ -243,6 +243,10 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
 
     if let Some((mut virtual_len, parent_depth)) = virtual_path_u8 {
         for _ in 0..parent_depth {
+            if base_path_len == 1 {
+                break;
+            }
+
             base_path_len -= 1;
             virtual_len += 1;
 
@@ -413,6 +417,11 @@ mod tests {
     #[case("/a/b/__virtual__/foo-abcdef/2/c/foo.zip/bar", Some(VPath::Zip(ZipInfo {
         base_path: "/".into(),
         virtual_segments: Some(("a/b/__virtual__/foo-abcdef/2/c/foo.zip".into(), "c/foo.zip".into())),
+        zip_path: "bar".into(),
+    })))]
+    #[case("/__virtual__/foo-abcdef/2/c/foo.zip/bar", Some(VPath::Zip(ZipInfo {
+        base_path: "/".into(),
+        virtual_segments: Some(("__virtual__/foo-abcdef/2/c/foo.zip".into(), "c/foo.zip".into())),
         zip_path: "bar".into(),
     })))]
     #[case("./a/b/c/.zip", None)]
