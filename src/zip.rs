@@ -5,6 +5,7 @@ use byteorder::{ReadBytesExt, LittleEndian};
 use std::io::Read;
 
 use crate::fs::FileType;
+use crate::util;
 
 #[derive(Debug)]
 pub enum Compression {
@@ -36,7 +37,7 @@ where T : AsRef<[u8]> {
         };
 
         for (name, maybe_entry) in list_zip_entries(zip.storage.as_ref())? {
-            let name = arca::path::normalize_path(name);
+            let name = util::normalize_path(name);
             let segments: Vec<&str> = name.split('/').collect();
 
             for t in 1..segments.len() - 1 {

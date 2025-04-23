@@ -132,7 +132,7 @@ pub struct Manifest {
     pub manifest_path: PathBuf,
 
     #[serde(skip_deserializing)]
-    location_trie: arca::path::Trie<PackageLocator>,
+    location_trie: util::Trie<PackageLocator>,
 
     enable_top_level_fallback: bool,
     ignore_pattern_data: Option<RegexDef>,
@@ -265,7 +265,7 @@ pub fn init_pnp_manifest<P: AsRef<Path>>(manifest: &mut Manifest, p: P) {
             let package_location = manifest.manifest_dir
                 .join(info.package_location.clone());
 
-            let normalized_location = arca::path::normalize_path(
+            let normalized_location = util::normalize_path(
                 &package_location.to_string_lossy(),
             );
 
@@ -304,7 +304,7 @@ pub fn find_locator<'a, P: AsRef<Path>>(manifest: &'a Manifest, path: &P) -> Opt
         .expect("Assertion failed: Provided path should be absolute");
 
     if let Some(regex) = &manifest.ignore_pattern_data {
-        if regex.0.is_match(&arca::path::normalize_path(rel_path.to_string_lossy())).unwrap() {
+        if regex.0.is_match(&util::normalize_path(rel_path.to_string_lossy())).unwrap() {
             return None
         }
     }

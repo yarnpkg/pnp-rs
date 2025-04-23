@@ -225,7 +225,7 @@ fn split_virtual(p_bytes: &[u8]) -> std::io::Result<(usize, Option<(usize, usize
 }
 
 fn vpath(p: &Path) -> std::io::Result<VPath> {
-    let p_str = arca::path::normalize_path(
+    let p_str = crate::util::normalize_path(
         &p.as_os_str()
             .to_string_lossy()
     );
@@ -302,6 +302,8 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
 mod tests {
     use rstest::rstest;
     use std::path::PathBuf;
+
+    use crate::util;
 
     use super::*;
 
@@ -445,7 +447,7 @@ mod tests {
     fn test_path_to_pnp(#[case] input: &str, #[case] expected: Option<VPath>) {
         let expectation: VPath = match &expected {
             Some(p) => p.clone(),
-            None => VPath::Native(PathBuf::from(arca::path::normalize_path(input))),
+            None => VPath::Native(PathBuf::from(util::normalize_path(input))),
         };
 
         match vpath(&PathBuf::from(input)) {
