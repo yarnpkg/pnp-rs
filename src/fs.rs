@@ -207,7 +207,10 @@ fn split_zip(p_bytes: &[u8]) -> (&[u8], Option<&[u8]>) {
 
 fn split_virtual(p_bytes: &[u8]) -> std::io::Result<(usize, Option<(usize, usize)>)> {
     lazy_static! {
-        static ref VIRTUAL_RE: Regex = Regex::new("(?:^|/)((?:\\$\\$virtual|__virtual__)/(?:[^/]+)-[a-f0-9]+/([0-9]+)/)").unwrap();
+        static ref VIRTUAL_RE: Regex
+            = Regex::new(
+                "(?:^|/)((?:\\$\\$virtual|__virtual__)/(?:[^/]+)-[a-f0-9]+/([0-9]+)/)"
+            ).unwrap();
     }
 
     if let Some(m) = VIRTUAL_RE.captures(p_bytes) {
@@ -240,6 +243,10 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
 
     if let Some((mut virtual_len, parent_depth)) = virtual_path_u8 {
         for _ in 0..parent_depth {
+            if base_path_len == 1 {
+                break;
+            }
+
             base_path_len -= 1;
             virtual_len += 1;
 
@@ -261,7 +268,13 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
             return Err(std::io::Error::new(std::io::ErrorKind::Other, "Invalid virtual back-reference"))
         }
 
-        base_path_u8 = &archive_path_u8[0..base_path_len - 1];
+        base_path_u8
+            = &base_path_u8[0..base_path_len];
+
+        // Trim the trailing slash
+        if base_path_u8.len() > 1 {
+            base_path_u8 = &base_path_u8[0..base_path_u8.len() - 1];
+        }
 
         virtual_segments = Some((
             io_bytes_to_str(&archive_path_u8[base_path_len..archive_path_u8.len()])?.to_string(),
@@ -287,10 +300,43 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use std::path::PathBuf;
 
-    // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
+
+    #[test]
+    fn test_zip_type_api() {
+        let zip = open_zip_via_read(&PathBuf::from(
+            "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
+        ))
+        .unwrap();
+
+        assert_eq!(zip.file_type("node_modules").unwrap(), FileType::Directory);
+        assert_eq!(zip.file_type("node_modules/").unwrap(), FileType::Directory);
+    }
+
+    #[test]
+    #[should_panic(expected = "Kind(NotFound)")]
+    fn test_zip_type_api_not_exist_dir_with_slash() {
+        let zip = open_zip_via_read(&PathBuf::from(
+            "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
+        ))
+        .unwrap();
+
+        zip.file_type("not_exists/").unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Kind(NotFound)")]
+    fn test_zip_type_api_not_exist_dir_without_slash() {
+        let zip = open_zip_via_read(&PathBuf::from(
+            "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
+        ))
+        .unwrap();
+
+        zip.file_type("not_exists").unwrap();
+    }
 
     #[test]
     fn test_zip_list() {
@@ -329,77 +375,85 @@ mod tests {
         assert_eq!(res, "{\n  \"name\": \"@babel/plugin-syntax-dynamic-import\",\n  \"version\": \"7.8.3\",\n  \"description\": \"Allow parsing of import()\",\n  \"repository\": \"https://github.com/babel/babel/tree/master/packages/babel-plugin-syntax-dynamic-import\",\n  \"license\": \"MIT\",\n  \"publishConfig\": {\n    \"access\": \"public\"\n  },\n  \"main\": \"lib/index.js\",\n  \"keywords\": [\n    \"babel-plugin\"\n  ],\n  \"dependencies\": {\n    \"@babel/helper-plugin-utils\": \"^7.8.0\"\n  },\n  \"peerDependencies\": {\n    \"@babel/core\": \"^7.0.0-0\"\n  },\n  \"devDependencies\": {\n    \"@babel/core\": \"^7.8.0\"\n  }\n}\n");
     }
 
-    #[test]
-    fn test_path_to_pnp() {
-        let tests: Vec<(String, Option<VPath>)> = serde_json::from_str(r#"[
-            [".zip", null],
-            ["foo", null],
-            ["foo.zip", null],
-            ["foo.zip/bar", {
-                "basePath": "foo.zip",
-                "virtualSegments": null,
-                "zipPath": "bar"
-            }],
-            ["foo.zip/bar/baz", {
-                "basePath": "foo.zip",
-                "virtualSegments": null,
-                "zipPath": "bar/baz"
-            }],
-            ["/a/b/c/foo.zip", null],
-            ["./a/b/c/foo.zip", null],
-            ["./a/b/__virtual__/foo-abcdef/0/c/d", {
-                "basePath": "a/b",
-                "virtualSegments": ["__virtual__/foo-abcdef/0/c/d", "c/d"],
-                "zipPath": null
-            }],
-            ["./a/b/__virtual__/foo-abcdef/1/c/d", {
-                "basePath": "a",
-                "virtualSegments": ["b/__virtual__/foo-abcdef/1/c/d", "c/d"],
-                "zipPath": null
-            }],
-            ["./a/b/__virtual__/foo-abcdef/0/c/foo.zip/bar", {
-                "basePath": "a/b",
-                "virtualSegments": ["__virtual__/foo-abcdef/0/c/foo.zip", "c/foo.zip"],
-                "zipPath": "bar"
-            }],
-            ["./a/b/__virtual__/foo-abcdef/1/c/foo.zip/bar", {
-                "basePath": "a",
-                "virtualSegments": ["b/__virtual__/foo-abcdef/1/c/foo.zip", "c/foo.zip"],
-                "zipPath": "bar"
-            }],
-            ["./a/b/c/.zip", null],
-            ["./a/b/c/foo.zipp", null],
-            ["./a/b/c/foo.zip/bar/baz/qux.zip", {
-                "basePath": "a/b/c/foo.zip",
-                "virtualSegments": null,
-                "zipPath": "bar/baz/qux.zip"
-            }],
-            ["./a/b/c/foo.zip-bar.zip", null],
-            ["./a/b/c/foo.zip-bar.zip/bar/baz/qux.zip", {
-                "basePath": "a/b/c/foo.zip-bar.zip",
-                "virtualSegments": null,
-                "zipPath": "bar/baz/qux.zip"
-            }],
-            ["./a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip/d", {
-                "basePath": "a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip",
-                "virtualSegments": null,
-                "zipPath": "d"
-            }]
-        ]"#).expect("Assertion failed: Expected the expectations to be loaded");
+    #[rstest]
+    #[case(".zip", None)]
+    #[case("foo", None)]
+    #[case("foo.zip", None)]
+    #[case("foo.zip/bar", Some(VPath::Zip(ZipInfo {
+        base_path: "foo.zip".into(),
+        virtual_segments: None,
+        zip_path: "bar".into(),
+    })))]
+    #[case("foo.zip/bar/baz", Some(VPath::Zip(ZipInfo {
+        base_path: "foo.zip".into(),
+        virtual_segments: None,
+        zip_path: "bar/baz".into(),
+    })))]
+    #[case("/a/b/c/foo.zip", None)]
+    #[case("./a/b/c/foo.zip", None)]
+    #[case("./a/b/__virtual__/foo-abcdef/0/c/d", Some(VPath::Virtual(VirtualInfo {
+        base_path: "a/b".into(),
+        virtual_segments: ("__virtual__/foo-abcdef/0/c/d".into(), "c/d".into()),
+    })))]
+    #[case("./a/b/__virtual__/foo-abcdef/1/c/d", Some(VPath::Virtual(VirtualInfo {
+        base_path: "a".into(),
+        virtual_segments: ("b/__virtual__/foo-abcdef/1/c/d".into(), "c/d".into()),
+    })))]
+    #[case("./a/b/__virtual__/foo-abcdef/0/c/foo.zip/bar", Some(VPath::Zip(ZipInfo {
+        base_path: "a/b".into(),
+        virtual_segments: Some(("__virtual__/foo-abcdef/0/c/foo.zip".into(), "c/foo.zip".into())),
+        zip_path: "bar".into(),
+    })))]
+    #[case("./a/b/__virtual__/foo-abcdef/1/c/foo.zip/bar", Some(VPath::Zip(ZipInfo {
+        base_path: "a".into(),
+        virtual_segments: Some(("b/__virtual__/foo-abcdef/1/c/foo.zip".into(), "c/foo.zip".into())),
+        zip_path: "bar".into(),
+    })))]
+    #[case("/a/b/__virtual__/foo-abcdef/1/c/foo.zip/bar", Some(VPath::Zip(ZipInfo {
+        base_path: "/a".into(),
+        virtual_segments: Some(("b/__virtual__/foo-abcdef/1/c/foo.zip".into(), "c/foo.zip".into())),
+        zip_path: "bar".into(),
+    })))]
+    #[case("/a/b/__virtual__/foo-abcdef/2/c/foo.zip/bar", Some(VPath::Zip(ZipInfo {
+        base_path: "/".into(),
+        virtual_segments: Some(("a/b/__virtual__/foo-abcdef/2/c/foo.zip".into(), "c/foo.zip".into())),
+        zip_path: "bar".into(),
+    })))]
+    #[case("/__virtual__/foo-abcdef/2/c/foo.zip/bar", Some(VPath::Zip(ZipInfo {
+        base_path: "/".into(),
+        virtual_segments: Some(("__virtual__/foo-abcdef/2/c/foo.zip".into(), "c/foo.zip".into())),
+        zip_path: "bar".into(),
+    })))]
+    #[case("./a/b/c/.zip", None)]
+    #[case("./a/b/c/foo.zipp", None)]
+    #[case("./a/b/c/foo.zip/bar/baz/qux.zip", Some(VPath::Zip(ZipInfo {
+        base_path: "a/b/c/foo.zip".into(),
+        virtual_segments: None,
+        zip_path: "bar/baz/qux.zip".into(),
+    })))]
+    #[case("./a/b/c/foo.zip-bar.zip", None)]
+    #[case("./a/b/c/foo.zip-bar.zip/bar/baz/qux.zip", Some(VPath::Zip(ZipInfo {
+        base_path: "a/b/c/foo.zip-bar.zip".into(),
+        virtual_segments: None,
+        zip_path: "bar/baz/qux.zip".into(),
+    })))]
+    #[case("./a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip/d", Some(VPath::Zip(ZipInfo {
+        base_path: "a/b/c/foo.zip-bar/foo.zip-bar/foo.zip-bar.zip".into(),
+        virtual_segments: None,
+        zip_path: "d".into(),
+    })))]
+    fn test_path_to_pnp(#[case] input: &str, #[case] expected: Option<VPath>) {
+        let expectation: VPath = match &expected {
+            Some(p) => p.clone(),
+            None => VPath::Native(PathBuf::from(arca::path::normalize_path(input))),
+        };
 
-        for (input, expected) in tests.iter() {
-            let expectation: VPath = match expected {
-                Some(p) => p.clone(),
-                None => VPath::Native(PathBuf::from(arca::path::normalize_path(input))),
-            };
-
-            match vpath(&PathBuf::from(input)) {
-                Ok(res) => {
-                    assert_eq!(res, expectation, "input='{:?}'", input);
-                }
-                Err(err) => {
-                    panic!("{:?}: {}", input, err);
-                }
+        match vpath(&PathBuf::from(input)) {
+            Ok(res) => {
+                assert_eq!(res, expectation, "input='{:?}'", input);
+            }
+            Err(err) => {
+                panic!("{:?}: {}", input, err);
             }
         }
     }
