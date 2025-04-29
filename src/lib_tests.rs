@@ -22,14 +22,13 @@ mod tests {
 
     use super::*;
     use crate::{
-        init_pnp_manifest, load_pnp_manifest, resolve_to_unqualified,
+        init_pnp_manifest, load_pnp_manifest, parse_bare_identifier, resolve_to_unqualified,
         resolve_to_unqualified_via_manifest, ResolutionHost,
     };
 
     #[test]
     fn example() {
-        let manifest
-            = load_pnp_manifest("data/pnp-yarn-v3.cjs").unwrap();
+        let manifest = load_pnp_manifest("data/pnp-yarn-v3.cjs").unwrap();
 
         let host = ResolutionHost {
             find_pnp_manifest: Box::new(move |_| Ok(Some(manifest.clone()))),
@@ -51,16 +50,16 @@ mod tests {
             Ok(Resolution::Resolved(_path, _subpath)) => {
                 // path = "/path/to/lodash.zip"
                 // subpath = "cloneDeep"
-            },
+            }
             Ok(Resolution::Skipped) => {
                 // This is returned when the PnP resolver decides that it shouldn't
                 // handle the resolution for this particular specifier. In that case,
                 // the specifier should be forwarded to the default resolver.
-            },
+            }
             Err(_err) => {
                 // An error happened during the resolution. Falling back to the default
                 // resolver isn't recommended.
-            },
+            }
         };
     }
 
@@ -110,15 +109,14 @@ mod tests {
                 match resolution {
                     Ok(Resolution::Resolved(path, _subpath)) => {
                         assert_eq!(path.to_string_lossy(), test.expected, "{}", test.it);
-                    },
+                    }
                     Ok(Resolution::Skipped) => {
                         assert_eq!(specifier, &test.expected, "{}", test.it);
-                    },
+                    }
                     Err(err) => {
                         assert_eq!(test.expected, "error!", "{}: {}", test.it, err.to_string());
-                    },
+                    }
                 }
-                
             }
         }
     }
@@ -126,7 +124,9 @@ mod tests {
     #[test]
     fn test_edge_case_one_pkg_cached_and_unplugged() {
         let manifest = {
-            let manifest_json_path = std::env::current_dir().unwrap().join("./data/edge_case_manifest_state.json");
+            let manifest_json_path = std::env::current_dir()
+                .unwrap()
+                .join("./data/edge_case_manifest_state.json");
             let manifest_content = fs::read_to_string(&manifest_json_path).unwrap();
             let mut manifest = serde_json::from_str::<Manifest>(&manifest_content).unwrap();
             init_pnp_manifest(&mut manifest, manifest_json_path);
@@ -148,5 +148,35 @@ mod tests {
                 panic!("Unexpected resolve failed");
             }
         }
+    }
+
+    #[test]
+    fn test_parse_single_package_name() {
+        let parsed = parse_bare_identifier("pkg");
+        assert_eq!(parsed, Ok(("pkg".to_string(), None)));
+    }
+
+    #[test]
+    fn test_parse_scoped_package_name() {
+        let parsed = parse_bare_identifier("@scope/pkg");
+        assert_eq!(parsed, Ok(("@scope/pkg".to_string(), None)));
+    }
+
+    #[test]
+    fn test_parse_package_name_with_long_subpath() {
+        let parsed = parse_bare_identifier("pkg/a/b/c/index.js");
+        assert_eq!(
+            parsed,
+            Ok(("pkg".to_string(), Some("a/b/c/index.js".to_string())))
+        );
+    }
+
+    #[test]
+    fn test_parse_scoped_package_with_long_subpath() {
+        let parsed = parse_bare_identifier("@scope/pkg/a/b/c/index.js");
+        assert_eq!(
+            parsed,
+            Ok(("@scope/pkg".to_string(), Some("a/b/c/index.js".to_string())))
+        );
     }
 }

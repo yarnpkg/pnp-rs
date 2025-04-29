@@ -183,7 +183,15 @@ pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>)
     }
 
     if let Some(ident) = ident_option {
-        Ok((ident, segments.next().map(|v| v.to_string())))
+        let lefts = segments.collect::<Vec<_>>();
+
+        let subpath = if lefts.len() == 0 {
+            None
+        } else {
+            Some(lefts.join("/"))
+        };
+
+        Ok((ident, subpath))
     } else {
         Err(Error::BadSpecifier {
             message: String::from("Invalid specifier"),
