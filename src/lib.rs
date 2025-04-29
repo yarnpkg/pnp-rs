@@ -168,36 +168,54 @@ pub struct Manifest {
     package_registry_data: HashMap<String, IndexMap<String, PackageInformation>>,
 }
 
+fn parse_scoped_package_name(specifier: &str) -> Option<(String, Option<String>)> {
+    let mut segments
+        = specifier.splitn(3, '/');
+
+    let Some(scope) = segments.next() else {
+        return None;
+    };
+
+    let Some(name) = segments.next() else {
+        return None;
+    };
+
+    let package_name
+        = specifier[..scope.len() + name.len() + 1].to_string();
+
+    let subpath
+        = segments.next().map(|v| v.to_string());
+
+    Some((package_name, subpath))
+}
+
+fn parse_global_package_name(specifier: &str) -> Option<(String, Option<String>)> {
+    let mut segments
+        = specifier.splitn(2, '/');
+
+    let Some(name) = segments.next() else {
+        return None;
+    };
+
+    let package_name
+        = name.to_string();
+
+    let subpath
+        = segments.next().map(|v| v.to_string());
+
+    Some((package_name, subpath))
+}
+
 pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>), Error> {
-    let mut segments = specifier.splitn(3, '/');
-    let mut ident_option: Option<String> = None;
+    let name = match specifier.starts_with("@") {
+        true => parse_scoped_package_name(specifier),
+        false => parse_global_package_name(specifier),
+    };
 
-    if let Some(first) = segments.next() {
-        if first.starts_with('@') {
-            if let Some(second) = segments.next() {
-                ident_option = Some(format!("{}/{}", first, second));
-            }
-        } else {
-            ident_option = Some(first.to_string());
-        }
-    }
-
-    if let Some(ident) = ident_option {
-        let rests = segments.collect::<Vec<_>>();
-
-        let subpath = if rests.len() == 0 {
-            None
-        } else {
-            Some(rests.join("/"))
-        };
-
-        Ok((ident, subpath))
-    } else {
-        Err(Error::BadSpecifier {
-            message: String::from("Invalid specifier"),
-            specifier: specifier.to_string(),
-        })
-    }
+    name.ok_or_else(|| Error::BadSpecifier {
+        message: String::from("Invalid specifier"),
+        specifier: specifier.to_string(),
+    })
 }
 
 pub fn find_closest_pnp_manifest_path<P: AsRef<Path>>(p: P) -> Option<PathBuf> {
