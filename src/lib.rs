@@ -183,12 +183,12 @@ pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>)
     }
 
     if let Some(ident) = ident_option {
-        let lefts = segments.collect::<Vec<_>>();
+        let rests = segments.collect::<Vec<_>>();
 
-        let subpath = if lefts.len() == 0 {
+        let subpath = if rests.len() == 0 {
             None
         } else {
-            Some(lefts.join("/"))
+            Some(rests.join("/"))
         };
 
         Ok((ident, subpath))
