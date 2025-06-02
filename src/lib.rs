@@ -292,11 +292,25 @@ pub fn init_pnp_manifest<P: AsRef<Path>>(manifest: &mut Manifest, p: P) {
 
     for (name, ranges) in manifest.package_registry_data.iter_mut() {
         for (reference, info) in ranges.iter_mut() {
+            println!(
+                "manifest.manifest_dir, {}",
+                manifest.manifest_dir.to_string_lossy()
+            );
+
             let package_location = manifest.manifest_dir.join(info.package_location.clone());
+
+            println!("package_location: {}", package_location.to_string_lossy());
 
             let normalized_location = util::normalize_path(&package_location.to_string_lossy());
 
+            println!("normalized_location: {}", normalized_location);
+
             info.package_location = PathBuf::from(normalized_location);
+
+            println!(
+                "info.package_location: {}",
+                info.package_location.to_string_lossy()
+            );
 
             if !info.discard_from_lookup {
                 manifest.location_trie.insert(
@@ -348,6 +362,12 @@ pub fn find_locator<'a, P: AsRef<Path>>(
             return None;
         }
     }
+
+    println!("path {}", path.as_ref().to_string_lossy());
+
+    let path = util::normalize_path(path.as_ref().to_string_lossy());
+
+    println!("path {}", path);
 
     manifest.location_trie.get_ancestor_value(&path)
 }

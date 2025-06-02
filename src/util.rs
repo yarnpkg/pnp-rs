@@ -3,7 +3,7 @@ use serde::{de::Error, Deserialize, Deserializer};
 use std::borrow::Cow;
 
 use path_slash::PathBufExt;
-use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf, MAIN_SEPARATOR_STR};
 
 #[derive(Debug, Default, Clone)]
 pub struct Trie<T> {
@@ -39,7 +39,9 @@ pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
     let p = PathBuf::from(original_str);
     let mut str = clean_path::clean(p).to_slash_lossy().to_string();
 
-    if original_str.ends_with('/') && !str.ends_with('/') {
+    if (original_str.ends_with('/') || original_str.ends_with(MAIN_SEPARATOR_STR))
+        && !str.ends_with('/')
+    {
         str.push('/');
     }
 
