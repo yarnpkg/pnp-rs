@@ -169,27 +169,37 @@ mod tests {
         let manifest = load_pnp_manifest(
             env::current_dir()
                 .unwrap()
-                .join("fixtures/global-cache/.pnp.cjs"),
+                .join("fixtures")
+                .join("global-cache")
+                .join(".pnp.cjs"),
         )
         .unwrap();
 
-        let global_cache = dirs::home_dir().unwrap().join(".yarn/berry/cache");
+        let global_cache = dirs::home_dir()
+            .unwrap()
+            .join(".yarn")
+            .join("berry")
+            .join("cache");
 
         let result = resolve_to_unqualified_via_manifest(
             &manifest,
             "source-map",
-            global_cache.join(
-                "source-map-support-npm-0.5.21-09ca99e250-10c0.zip/node_modules/source-map-support/",
-            ),
+            global_cache
+                .join("source-map-support-npm-0.5.21-09ca99e250-10c0.zip")
+                .join("node_modules")
+                .join("source-map-support")
+                .join(""),
         );
 
         match result {
             Ok(Resolution::Resolved(path, subpath)) => {
                 assert_eq!(
                     path,
-                    global_cache.join(
-                        "source-map-npm-0.6.1-1a3621db16-10c0.zip/node_modules/source-map/"
-                    )
+                    global_cache
+                        .join("source-map-npm-0.6.1-1a3621db16-10c0.zip")
+                        .join("node_modules")
+                        .join("source-map")
+                        .join("")
                 );
                 assert_eq!(subpath, None);
             }
