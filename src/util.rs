@@ -1,9 +1,9 @@
 use fancy_regex::Regex;
 use serde::{Deserialize, Deserializer, de::Error};
-use std::borrow::Cow;
+use std::{borrow::Cow, path::Component};
 
 use path_slash::PathBufExt;
-use std::path::{Path, PathBuf};
+use std::path::{MAIN_SEPARATOR_STR, Path, PathBuf};
 
 #[derive(Debug, Default, Clone)]
 pub struct Trie<T> {
@@ -33,13 +33,39 @@ impl<T> Trie<T> {
     }
 }
 
+fn clean_path(path: PathBuf) -> PathBuf {
+    let mut out = Vec::new();
+
+    for comp in path.components() {
+        println!("Component: {:?}", comp);
+        match comp {
+            Component::CurDir => (),
+            Component::ParentDir => match out.last() {
+                Some(Component::RootDir) => (),
+                Some(Component::Normal(_)) => {
+                    out.pop();
+                }
+                None
+                | Some(Component::CurDir)
+                | Some(Component::ParentDir)
+                | Some(Component::Prefix(_)) => out.push(comp),
+            },
+            comp => out.push(comp),
+        }
+    }
+
+    if !out.is_empty() { out.iter().collect() } else { PathBuf::from(".") }
+}
+
 pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
     let original_str = original.as_ref();
 
     let p = PathBuf::from(original_str);
-    let mut str = clean_path::clean(p).to_slash_lossy().to_string();
+    let mut str = clean_path(p).to_slash_lossy().to_string();
 
-    if original_str.ends_with('/') && !str.ends_with('/') {
+    if (original_str.ends_with('/') || original_str.ends_with(MAIN_SEPARATOR_STR))
+        && !str.ends_with('/')
+    {
         str.push('/');
     }
 
