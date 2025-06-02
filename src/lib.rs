@@ -341,7 +341,10 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                 }
             }?;
 
-            Ok(Resolution::Resolved(dependency_pkg.package_location.clone(), module_path))
+            Ok(Resolution::Resolved(
+                dependency_pkg.package_location.clone(),
+                module_path,
+            ))
         } else {
             let broken_ancestors = find_broken_peer_dependencies(specifier, parent_locator);
 
