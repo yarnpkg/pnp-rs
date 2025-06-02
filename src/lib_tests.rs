@@ -18,7 +18,7 @@ struct TestSuite {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{env, fs, path::PathBuf};
 
     use super::*;
     use crate::{
@@ -166,21 +166,32 @@ mod tests {
 
     #[test]
     fn test_global_cache() {
-        let manifest = load_pnp_manifest("fixtures/global-cache/.pnp.cjs").unwrap();
+        let manifest = load_pnp_manifest(
+            env::current_dir()
+                .unwrap()
+                .join("fixtures/global-cache/.pnp.cjs"),
+        )
+        .unwrap();
 
         let global_cache = dirs::home_dir().unwrap().join(".yarn/berry/cache");
 
-        let result = resolve_to_unqualified_via_manifest(&manifest, "source-map", global_cache.join("source-map-support-npm-0.5.21-09ca99e250-9ee09942f4.zip/node_modules/source-map-support/"));
+        let result = resolve_to_unqualified_via_manifest(
+            &manifest,
+            "source-map",
+            global_cache.join(
+                "source-map-support-npm-0.5.21-09ca99e250-10c0.zip/node_modules/source-map-support/",
+            ),
+        );
 
         match result {
             Ok(Resolution::Resolved(path, subpath)) => {
                 assert_eq!(
                     path,
                     global_cache.join(
-                        "source-map-npm-0.6.1-1a3621db16-ab55398007.zip/node_modules/source-map"
+                        "source-map-npm-0.6.1-1a3621db16-10c0.zip/node_modules/source-map/"
                     )
                 );
-                assert_eq!(subpath, Some("source-map.js".into()));
+                assert_eq!(subpath, None);
             }
             _ => {
                 panic!("Unexpected resolve failed");
