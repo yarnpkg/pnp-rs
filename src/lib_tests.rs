@@ -150,6 +150,7 @@ mod tests {
         }
     }
 
+
     #[test]
     fn test_parse_single_package_name() {
         let parsed = parse_bare_identifier("pkg");
