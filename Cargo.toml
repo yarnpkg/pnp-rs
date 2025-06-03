@@ -27,6 +27,7 @@ serde_with = {  version = "3", features = ["indexmap_2"] }
 thiserror = "2"
 
 [dev-dependencies]
+dirs = "6.0.0"
 rstest = "0.25.0"
 
 [features]

@@ -1,7 +1,10 @@
 use lazy_static::lazy_static;
 use regex::bytes::Regex;
 use serde::Deserialize;
-use std::{path::{Path, PathBuf}, str::Utf8Error};
+use std::{
+    path::{Path, PathBuf},
+    str::Utf8Error,
+};
 
 use crate::zip::Zip;
 
@@ -80,31 +83,26 @@ pub enum Error {
 fn make_io_utf8_error() -> std::io::Error {
     std::io::Error::new(
         std::io::ErrorKind::InvalidData,
-        "File did not contain valid UTF-8"
+        "File did not contain valid UTF-8",
     )
 }
 
 fn io_bytes_to_str(vec: &[u8]) -> Result<&str, std::io::Error> {
-    std::str::from_utf8(vec)
-        .map_err(|_| make_io_utf8_error())
+    std::str::from_utf8(vec).map_err(|_| make_io_utf8_error())
 }
 
 #[cfg(feature = "mmap")]
 pub fn open_zip_via_mmap<P: AsRef<Path>>(p: P) -> Result<Zip<mmap_rs::Mmap>, std::io::Error> {
     let file = fs::File::open(p)?;
 
-    let mmap_builder = mmap_rs::MmapOptions::new(file.metadata().unwrap().len().try_into().unwrap())
-        .unwrap();
+    let mmap_builder =
+        mmap_rs::MmapOptions::new(file.metadata().unwrap().len().try_into().unwrap()).unwrap();
 
-    let mmap = unsafe {
-        mmap_builder
-            .with_file(file, 0)
-            .map()
-            .unwrap()
-    };
+    let mmap = unsafe { mmap_builder.with_file(file, 0).map().unwrap() };
 
-    let zip = Zip::new(mmap)
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to read the zip file"))?;
+    let zip = Zip::new(mmap).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::Other, "Failed to read the zip file")
+    })?;
 
     Ok(zip)
 }
@@ -117,8 +115,9 @@ pub fn open_zip_via_mmap_p(p: &Path) -> Result<Zip<mmap_rs::Mmap>, std::io::Erro
 pub fn open_zip_via_read<P: AsRef<Path>>(p: P) -> Result<Zip<Vec<u8>>, std::io::Error> {
     let data = std::fs::read(p)?;
 
-    let zip = Zip::new(data)
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to read the zip file"))?;
+    let zip = Zip::new(data).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::Other, "Failed to read the zip file")
+    })?;
 
     Ok(zip)
 }
@@ -128,23 +127,45 @@ pub fn open_zip_via_read_p(p: &Path) -> Result<Zip<Vec<u8>>, std::io::Error> {
 }
 
 pub trait ZipCache<Storage>
-where Storage: AsRef<[u8]> + Send + Sync {
-    fn act<T, P: AsRef<Path>, F : FnOnce(&Zip<Storage>) -> T>(&self, p: P, cb: F) -> Result<T, std::io::Error>;
+where
+    Storage: AsRef<[u8]> + Send + Sync,
+{
+    fn act<T, P: AsRef<Path>, F: FnOnce(&Zip<Storage>) -> T>(
+        &self,
+        p: P,
+        cb: F,
+    ) -> Result<T, std::io::Error>;
 
-    fn file_type<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<FileType, std::io::Error>;
-    fn read<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<Vec<u8>, std::io::Error>;
-    fn read_to_string<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, sub: S) -> Result<String, std::io::Error>;
+    fn file_type<P: AsRef<Path>, S: AsRef<str>>(
+        &self,
+        zip_path: P,
+        sub: S,
+    ) -> Result<FileType, std::io::Error>;
+    fn read<P: AsRef<Path>, S: AsRef<str>>(
+        &self,
+        zip_path: P,
+        sub: S,
+    ) -> Result<Vec<u8>, std::io::Error>;
+    fn read_to_string<P: AsRef<Path>, S: AsRef<str>>(
+        &self,
+        zip_path: P,
+        sub: S,
+    ) -> Result<String, std::io::Error>;
 }
 
 #[derive(Debug)]
 pub struct LruZipCache<Storage>
-where Storage: AsRef<[u8]> + Send + Sync {
+where
+    Storage: AsRef<[u8]> + Send + Sync,
+{
     lru: concurrent_lru::sharded::LruCache<PathBuf, Zip<Storage>>,
     open: fn(&Path) -> std::io::Result<Zip<Storage>>,
 }
 
 impl<Storage> LruZipCache<Storage>
-where Storage: AsRef<[u8]> + Send + Sync {
+where
+    Storage: AsRef<[u8]> + Send + Sync,
+{
     pub fn new(n: u64, open: fn(&Path) -> std::io::Result<Zip<Storage>>) -> LruZipCache<Storage> {
         LruZipCache {
             lru: concurrent_lru::sharded::LruCache::new(n),
@@ -154,24 +175,42 @@ where Storage: AsRef<[u8]> + Send + Sync {
 }
 
 impl<Storage> ZipCache<Storage> for LruZipCache<Storage>
-where Storage: AsRef<[u8]> + Send + Sync {
-    fn act<T, P: AsRef<Path>, F: FnOnce(&Zip<Storage>) -> T>(&self, p: P, cb: F) -> Result<T, std::io::Error> {
-        let zip = self.lru.get_or_try_init(p.as_ref().to_path_buf(), 1, |p| {
-            (self.open)(&p)
-        })?;
+where
+    Storage: AsRef<[u8]> + Send + Sync,
+{
+    fn act<T, P: AsRef<Path>, F: FnOnce(&Zip<Storage>) -> T>(
+        &self,
+        p: P,
+        cb: F,
+    ) -> Result<T, std::io::Error> {
+        let zip = self
+            .lru
+            .get_or_try_init(p.as_ref().to_path_buf(), 1, |p| (self.open)(&p))?;
 
         Ok(cb(zip.value()))
     }
 
-    fn file_type<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, p: S) -> Result<FileType, std::io::Error> {
+    fn file_type<P: AsRef<Path>, S: AsRef<str>>(
+        &self,
+        zip_path: P,
+        p: S,
+    ) -> Result<FileType, std::io::Error> {
         self.act(zip_path, |zip| zip.file_type(p.as_ref()))?
     }
 
-    fn read<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, p: S) -> Result<Vec<u8>, std::io::Error> {
+    fn read<P: AsRef<Path>, S: AsRef<str>>(
+        &self,
+        zip_path: P,
+        p: S,
+    ) -> Result<Vec<u8>, std::io::Error> {
         self.act(zip_path, |zip| zip.read(p.as_ref()))?
     }
 
-    fn read_to_string<P: AsRef<Path>, S: AsRef<str>>(&self, zip_path: P, p: S) -> Result<String, std::io::Error> {
+    fn read_to_string<P: AsRef<Path>, S: AsRef<str>>(
+        &self,
+        zip_path: P,
+        p: S,
+    ) -> Result<String, std::io::Error> {
         self.act(zip_path, |zip| zip.read_to_string(p.as_ref()))?
     }
 }
@@ -187,12 +226,15 @@ fn split_zip(p_bytes: &[u8]) -> (&[u8], Option<&[u8]>) {
         if let Some(m) = ZIP_RE.find_at(p_bytes, search_offset) {
             let idx = m.start();
             let next_char_idx = m.end();
-    
-            if idx == 0 || p_bytes.get(idx - 1) == Some(&b'/') || p_bytes.get(next_char_idx) != Some(&b'/') {
+
+            if idx == 0
+                || p_bytes.get(idx - 1) == Some(&b'/')
+                || p_bytes.get(next_char_idx) != Some(&b'/')
+            {
                 search_offset = next_char_idx;
                 continue;
             }
-    
+
             let zip_path = &p_bytes[0..next_char_idx];
             let sub_path = p_bytes.get(next_char_idx + 1..);
 
@@ -207,10 +249,9 @@ fn split_zip(p_bytes: &[u8]) -> (&[u8], Option<&[u8]>) {
 
 fn split_virtual(p_bytes: &[u8]) -> std::io::Result<(usize, Option<(usize, usize)>)> {
     lazy_static! {
-        static ref VIRTUAL_RE: Regex
-            = Regex::new(
-                "(?:^|/)((?:\\$\\$virtual|__virtual__)/(?:[^/]+)-[a-f0-9]+/([0-9]+)/)"
-            ).unwrap();
+        static ref VIRTUAL_RE: Regex =
+            Regex::new("(?:^|/)((?:\\$\\$virtual|__virtual__)/(?:[^/]+)-[a-f0-9]+/([0-9]+)/)")
+                .unwrap();
     }
 
     if let Some(m) = VIRTUAL_RE.captures(p_bytes) {
@@ -225,18 +266,12 @@ fn split_virtual(p_bytes: &[u8]) -> std::io::Result<(usize, Option<(usize, usize
 }
 
 fn vpath(p: &Path) -> std::io::Result<VPath> {
-    let p_str = crate::util::normalize_path(
-        &p.as_os_str()
-            .to_string_lossy()
-    );
+    let p_str = crate::util::normalize_path(&p.as_os_str().to_string_lossy());
 
-    let p_bytes = p_str
-        .as_bytes().to_vec();
+    let p_bytes = p_str.as_bytes().to_vec();
 
-    let (archive_path_u8, zip_path_u8)
-        = split_zip(&p_bytes);
-    let (mut base_path_len, virtual_path_u8)
-        = split_virtual(archive_path_u8)?;
+    let (archive_path_u8, zip_path_u8) = split_zip(&p_bytes);
+    let (mut base_path_len, virtual_path_u8) = split_virtual(archive_path_u8)?;
 
     let mut base_path_u8 = archive_path_u8;
     let mut virtual_segments = None;
@@ -250,7 +285,7 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
             base_path_len -= 1;
             virtual_len += 1;
 
-            while let Some(c) = archive_path_u8.get(base_path_len - 1)  {
+            while let Some(c) = archive_path_u8.get(base_path_len - 1) {
                 if *c == b'/' {
                     break;
                 } else {
@@ -262,14 +297,19 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
 
         if let Some(c) = archive_path_u8.get(base_path_len - 1) {
             if *c != b'/' {
-                return Err(std::io::Error::new(std::io::ErrorKind::Other, "Invalid virtual back-reference"))
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Invalid virtual back-reference",
+                ));
             }
         } else {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "Invalid virtual back-reference"))
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Invalid virtual back-reference",
+            ));
         }
 
-        base_path_u8
-            = &base_path_u8[0..base_path_len];
+        base_path_u8 = &base_path_u8[0..base_path_len];
 
         // Trim the trailing slash
         if base_path_u8.len() > 1 {
@@ -278,7 +318,8 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
 
         virtual_segments = Some((
             io_bytes_to_str(&archive_path_u8[base_path_len..archive_path_u8.len()])?.to_string(),
-            io_bytes_to_str(&archive_path_u8[base_path_len + virtual_len..archive_path_u8.len()])?.to_string(),
+            io_bytes_to_str(&archive_path_u8[base_path_len + virtual_len..archive_path_u8.len()])?
+                .to_string(),
         ));
     } else if zip_path_u8.is_none() {
         return Ok(VPath::Native(PathBuf::from(p_str)));
@@ -342,8 +383,10 @@ mod tests {
 
     #[test]
     fn test_zip_list() {
-        let zip = open_zip_via_read(&PathBuf::from("data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip"))
-            .unwrap();
+        let zip = open_zip_via_read(&PathBuf::from(
+            "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
+        ))
+        .unwrap();
 
         let mut dirs: Vec<&String> = zip.dirs.iter().collect();
         let mut files: Vec<&String> = zip.files.keys().collect();
@@ -351,27 +394,36 @@ mod tests {
         dirs.sort();
         files.sort();
 
-        assert_eq!(dirs, vec![
-            "node_modules/",
-            "node_modules/@babel/",
-            "node_modules/@babel/plugin-syntax-dynamic-import/",
-            "node_modules/@babel/plugin-syntax-dynamic-import/lib/",
-        ]);
+        assert_eq!(
+            dirs,
+            vec![
+                "node_modules/",
+                "node_modules/@babel/",
+                "node_modules/@babel/plugin-syntax-dynamic-import/",
+                "node_modules/@babel/plugin-syntax-dynamic-import/lib/",
+            ]
+        );
 
-        assert_eq!(files, vec![
-            "node_modules/@babel/plugin-syntax-dynamic-import/LICENSE",
-            "node_modules/@babel/plugin-syntax-dynamic-import/README.md",
-            "node_modules/@babel/plugin-syntax-dynamic-import/lib/index.js",
-            "node_modules/@babel/plugin-syntax-dynamic-import/package.json",
-        ]);
+        assert_eq!(
+            files,
+            vec![
+                "node_modules/@babel/plugin-syntax-dynamic-import/LICENSE",
+                "node_modules/@babel/plugin-syntax-dynamic-import/README.md",
+                "node_modules/@babel/plugin-syntax-dynamic-import/lib/index.js",
+                "node_modules/@babel/plugin-syntax-dynamic-import/package.json",
+            ]
+        );
     }
 
     #[test]
     fn test_zip_read() {
-        let zip = open_zip_via_read(&PathBuf::from("data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip"))
-            .unwrap();
+        let zip = open_zip_via_read(&PathBuf::from(
+            "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
+        ))
+        .unwrap();
 
-        let res = zip.read_to_string("node_modules/@babel/plugin-syntax-dynamic-import/package.json")
+        let res = zip
+            .read_to_string("node_modules/@babel/plugin-syntax-dynamic-import/package.json")
             .unwrap();
 
         assert_eq!(res, "{\n  \"name\": \"@babel/plugin-syntax-dynamic-import\",\n  \"version\": \"7.8.3\",\n  \"description\": \"Allow parsing of import()\",\n  \"repository\": \"https://github.com/babel/babel/tree/master/packages/babel-plugin-syntax-dynamic-import\",\n  \"license\": \"MIT\",\n  \"publishConfig\": {\n    \"access\": \"public\"\n  },\n  \"main\": \"lib/index.js\",\n  \"keywords\": [\n    \"babel-plugin\"\n  ],\n  \"dependencies\": {\n    \"@babel/helper-plugin-utils\": \"^7.8.0\"\n  },\n  \"peerDependencies\": {\n    \"@babel/core\": \"^7.0.0-0\"\n  },\n  \"devDependencies\": {\n    \"@babel/core\": \"^7.8.0\"\n  }\n}\n");

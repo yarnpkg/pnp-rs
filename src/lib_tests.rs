@@ -18,12 +18,12 @@ struct TestSuite {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{env, fs, path::PathBuf};
 
     use super::*;
     use crate::{
         init_pnp_manifest, load_pnp_manifest, parse_bare_identifier, resolve_to_unqualified,
-        resolve_to_unqualified_via_manifest, ResolutionHost,
+        resolve_to_unqualified_via_manifest, util, ResolutionHost,
     };
 
     #[test]
@@ -179,5 +179,54 @@ mod tests {
             parsed,
             Ok(("@scope/pkg".to_string(), Some("a/b/c/index.js".to_string())))
         );
+    }
+
+    #[test]
+    fn test_global_cache() {
+        let manifest = load_pnp_manifest(
+            env::current_dir()
+                .unwrap()
+                .join("fixtures")
+                .join("global-cache")
+                .join(".pnp.cjs"),
+        )
+        .unwrap();
+
+        let home_dir = dirs::home_dir().unwrap();
+
+        #[cfg(windows)]
+        let global_cache = home_dir.join("AppData\\Local\\Yarn\\Berry");
+        #[cfg(not(windows))]
+        let global_cache = home_dir.join(".yarn/berry/cache");
+
+        let result = resolve_to_unqualified_via_manifest(
+            &manifest,
+            "source-map",
+            global_cache
+                .join("source-map-support-npm-0.5.21-09ca99e250-10c0.zip")
+                .join("node_modules")
+                .join("source-map-support")
+                .join(""),
+        );
+
+        match result {
+            Ok(Resolution::Resolved(path, subpath)) => {
+                assert_eq!(
+                    path.to_string_lossy(),
+                    util::normalize_path(
+                        global_cache
+                            .join("source-map-npm-0.6.1-1a3621db16-10c0.zip")
+                            .join("node_modules")
+                            .join("source-map")
+                            .join("")
+                            .to_string_lossy()
+                    )
+                );
+                assert_eq!(subpath, None);
+            }
+            _ => {
+                panic!("Unexpected resolve failed");
+            }
+        }
     }
 }
