@@ -86,7 +86,13 @@ mod tests {
 
         for test_suite in test_suites.iter_mut() {
             let manifest = &mut test_suite.manifest;
-            init_pnp_manifest(manifest, &PathBuf::from("/path/to/project/.pnp.cjs"));
+
+            #[cfg(windows)]
+            let manifest_path = "C:\\path\\to\\project\\.pnp.cjs";
+            #[cfg(not(windows))]
+            let manifest_path = "/path/to/project/.pnp.cjs";
+
+            init_pnp_manifest(manifest, &PathBuf::from(manifest_path));
 
             for test in test_suite.tests.iter() {
                 let specifier
