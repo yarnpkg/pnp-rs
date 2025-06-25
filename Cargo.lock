@@ -532,7 +532,6 @@ dependencies = [
  "path-slash",
  "pathdiff",
  "radix_trie",
- "regex",
  "rstest",
  "serde",
  "serde_json",
