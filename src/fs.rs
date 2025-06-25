@@ -1,5 +1,3 @@
-use lazy_static::lazy_static;
-use regex::bytes::Regex;
 use serde::Deserialize;
 use std::{path::{Path, PathBuf}, str::Utf8Error};
 
@@ -75,18 +73,6 @@ pub enum Error {
 
     #[error(transparent)]
     IOError(#[from] std::io::Error),
-}
-
-fn make_io_utf8_error() -> std::io::Error {
-    std::io::Error::new(
-        std::io::ErrorKind::InvalidData,
-        "File did not contain valid UTF-8"
-    )
-}
-
-fn io_bytes_to_str(vec: &[u8]) -> Result<&str, std::io::Error> {
-    std::str::from_utf8(vec)
-        .map_err(|_| make_io_utf8_error())
 }
 
 #[cfg(feature = "mmap")]
@@ -176,126 +162,126 @@ where Storage: AsRef<[u8]> + Send + Sync {
     }
 }
 
-fn split_zip(p_bytes: &[u8]) -> (&[u8], Option<&[u8]>) {
-    lazy_static! {
-        static ref ZIP_RE: Regex = Regex::new(r"\.zip").unwrap();
-    }
-
-    let mut search_offset = 0;
-
-    while search_offset < p_bytes.len() {
-        if let Some(m) = ZIP_RE.find_at(p_bytes, search_offset) {
-            let idx = m.start();
-            let next_char_idx = m.end();
-    
-            if idx == 0 || p_bytes.get(idx - 1) == Some(&b'/') || p_bytes.get(next_char_idx) != Some(&b'/') {
-                search_offset = next_char_idx;
-                continue;
-            }
-    
-            let zip_path = &p_bytes[0..next_char_idx];
-            let sub_path = p_bytes.get(next_char_idx + 1..);
-
-            return (zip_path, sub_path);
-        } else {
-            break;
-        }
-    }
-
-    (p_bytes, None)
-}
-
-fn split_virtual(p_bytes: &[u8]) -> std::io::Result<(usize, Option<(usize, usize)>)> {
-    lazy_static! {
-        static ref VIRTUAL_RE: Regex
-            = Regex::new(
-                "(?:^|/)((?:\\$\\$virtual|__virtual__)/(?:[^/]+)-[a-f0-9]+/([0-9]+)/)"
-            ).unwrap();
-    }
-
-    if let Some(m) = VIRTUAL_RE.captures(p_bytes) {
-        if let (Some(main), Some(depth)) = (m.get(1), m.get(2)) {
-            if let Ok(depth_n) = str::parse(io_bytes_to_str(depth.as_bytes())?) {
-                return Ok((main.start(), Some((main.end() - main.start(), depth_n))));
-            }
-        }
-    }
-
-    Ok((p_bytes.len(), None))
-}
-
 fn vpath(p: &Path) -> std::io::Result<VPath> {
-    let p_str = crate::util::normalize_path(
-        &p.as_os_str()
-            .to_string_lossy()
-    );
+    let Some(p_str) = p.as_os_str().to_str() else {
+        return Ok(VPath::Native(p.to_path_buf()));
+    };
 
-    let p_bytes = p_str
-        .as_bytes().to_vec();
+    let normalized_path
+        = crate::util::normalize_path(p_str);
 
-    let (archive_path_u8, zip_path_u8)
-        = split_zip(&p_bytes);
-    let (mut base_path_len, virtual_path_u8)
-        = split_virtual(archive_path_u8)?;
+    // We remove potential leading slashes to avoid __virtual__ accidentally removing them
+    let normalized_relative_path
+        = normalized_path.strip_prefix('/')
+            .unwrap_or(&normalized_path);
 
-    let mut base_path_u8 = archive_path_u8;
-    let mut virtual_segments = None;
+    let mut segment_it
+        = normalized_relative_path.split('/');
 
-    if let Some((mut virtual_len, parent_depth)) = virtual_path_u8 {
-        for _ in 0..parent_depth {
-            if base_path_len == 1 {
-                break;
+    // `split` returns [""] if the path is empty; we need to remove it
+    if normalized_relative_path.is_empty() {
+        segment_it.next();
+    }
+
+    let mut base_items: Vec<&str>
+        = Vec::new();
+
+    let mut virtual_items: Option<Vec<&str>>
+        = None;
+    let mut internal_items: Option<Vec<&str>>
+        = None;
+    let mut zip_items: Option<Vec<&str>>
+        = None;
+
+    while let Some(segment) = segment_it.next() {
+        if let Some(zip_segments) = &mut zip_items {
+            zip_segments.push(segment);
+            continue;
+        }
+
+        if segment == "__virtual__" && virtual_items.is_none() {
+            let mut acc_segments
+                = Vec::with_capacity(3);
+
+            acc_segments.push(segment);
+
+            // We just skip the arbitrary hash, it doesn't matter what it is
+            if let Some(hash_segment) = segment_it.next() {
+                acc_segments.push(hash_segment);
             }
 
-            base_path_len -= 1;
-            virtual_len += 1;
+            // We retrieve the depth
+            if let Some(depth_segment) = segment_it.next() {
+                let depth = depth_segment
+                    .parse::<usize>();
 
-            while let Some(c) = archive_path_u8.get(base_path_len - 1)  {
-                if *c == b'/' {
-                    break;
-                } else {
-                    base_path_len -= 1;
-                    virtual_len += 1;
+                acc_segments.push(depth_segment);
+
+                // We extract the backward segments from the base ones
+                if let Ok(depth) = depth {
+                    let parent_segments = base_items
+                        .split_off(base_items.len().saturating_sub(depth));
+
+                    acc_segments.splice(0..0, parent_segments);
                 }
             }
+
+            virtual_items = Some(acc_segments);
+            internal_items = Some(vec![]);
+
+            continue;
         }
 
-        if let Some(c) = archive_path_u8.get(base_path_len - 1) {
-            if *c != b'/' {
-                return Err(std::io::Error::new(std::io::ErrorKind::Other, "Invalid virtual back-reference"))
-            }
+        if segment.len() > 4 && segment.ends_with(".zip") {
+            zip_items = Some(vec![]);
+        }
+
+        if let Some(virtual_segments) = &mut virtual_items {
+            virtual_segments.push(segment);
+        }
+
+        if let Some(internal_segments) = &mut internal_items {
+            internal_segments.push(segment);
         } else {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "Invalid virtual back-reference"))
+            base_items.push(segment);
         }
-
-        base_path_u8
-            = &base_path_u8[0..base_path_len];
-
-        // Trim the trailing slash
-        if base_path_u8.len() > 1 {
-            base_path_u8 = &base_path_u8[0..base_path_u8.len() - 1];
-        }
-
-        virtual_segments = Some((
-            io_bytes_to_str(&archive_path_u8[base_path_len..archive_path_u8.len()])?.to_string(),
-            io_bytes_to_str(&archive_path_u8[base_path_len + virtual_len..archive_path_u8.len()])?.to_string(),
-        ));
-    } else if zip_path_u8.is_none() {
-        return Ok(VPath::Native(PathBuf::from(p_str)));
     }
 
-    if let Some(zip_path_u8) = zip_path_u8 {
-        Ok(VPath::Zip(ZipInfo {
-            base_path: io_bytes_to_str(base_path_u8)?.to_string(),
-            virtual_segments,
-            zip_path: io_bytes_to_str(zip_path_u8)?.to_string(),
-        }))
-    } else {
-        Ok(VPath::Virtual(VirtualInfo {
-            base_path: io_bytes_to_str(base_path_u8)?.to_string(),
-            virtual_segments: virtual_segments.unwrap(),
-        }))
+    let mut base_path = base_items.join("/");
+
+    // Don't forget to add back the leading slash we removed earlier
+    if normalized_relative_path != normalized_path {
+        base_path.insert(0, '/');
     }
+
+    let virtual_info = match (virtual_items, internal_items) {
+        (Some(virtual_segments), Some(internal_segments)) => {
+            Some((virtual_segments.join("/"), internal_segments.join("/")))
+        }
+
+        _ => {
+            None
+        },
+    };
+
+    if let Some(zip_segments) = zip_items {
+        if !zip_segments.is_empty() {
+            return Ok(VPath::Zip(ZipInfo {
+                base_path,
+                virtual_segments: virtual_info,
+                zip_path: zip_segments.join("/"),
+            }));
+        }
+    }
+    
+    if let Some(virtual_info) = virtual_info {
+        return Ok(VPath::Virtual(VirtualInfo {
+            base_path,
+            virtual_segments: virtual_info,
+        }));
+    }
+
+    Ok(VPath::Native(PathBuf::from(base_path)))
 }
 
 #[cfg(test)]
