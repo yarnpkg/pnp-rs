@@ -8,7 +8,6 @@ homepage = "https://yarnpkg.com"
 repository = "https://github.com/yarnpkg/pnp-rs"
 
 [dependencies]
-arca = "^0.7"
 byteorder = "1"
 clean-path = "0.2.1"
 concurrent_lru = "^0.2"

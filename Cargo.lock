@@ -33,17 +33,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arca"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f915ddd863ef73f11c10c75170e86db1d4f539689bc6bfb9ce25d6528d6fe83"
-dependencies = [
- "clean-path",
- "path-slash",
- "radix_trie",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -520,7 +509,6 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 name = "pnp"
 version = "0.9.4"
 dependencies = [
- "arca",
  "byteorder",
  "clean-path",
  "concurrent_lru",
