@@ -162,7 +162,7 @@ where Storage: AsRef<[u8]> + Send + Sync {
     }
 }
 
-fn vpath(p: &Path) -> std::io::Result<VPath> {
+pub fn vpath(p: &Path) -> std::io::Result<VPath> {
     let Some(p_str) = p.as_os_str().to_str() else {
         return Ok(VPath::Native(p.to_path_buf()));
     };
