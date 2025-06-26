@@ -86,13 +86,38 @@ mod tests {
 
         for test_suite in test_suites.iter_mut() {
             let manifest = &mut test_suite.manifest;
-            init_pnp_manifest(manifest, &PathBuf::from("/path/to/project/.pnp.cjs"));
+
+            #[cfg(windows)]
+            let manifest_path = "C:\\path\\to\\project\\.pnp.cjs";
+            #[cfg(not(windows))]
+            let manifest_path = "/path/to/project/.pnp.cjs";
+
+            init_pnp_manifest(manifest, &PathBuf::from(manifest_path));
 
             for test in test_suite.tests.iter() {
-                let specifier = &test.imported;
-                let parent = &PathBuf::from(&test.importer).join("fooo");
+                let specifier
+                    = &test.imported;
 
-                let manifest_copy = manifest.clone();
+                let mut importer
+                    = test.importer.clone();
+
+                #[cfg(windows)] {
+                    importer.replace_range(0..1, "C:\\");
+                    importer.replace("/", "\\");
+                }
+
+                let mut expected = test.expected.clone();
+
+                #[cfg(windows)] {
+                    importer.replace_range(0..1, "C:\\");
+                    importer.replace("/", "\\");
+                }
+
+                let parent
+                    = &PathBuf::from(&importer).join("my-file");
+
+                let manifest_copy
+                    = manifest.clone();
 
                 let host = ResolutionHost {
                     find_pnp_manifest: Box::new(move |_| Ok(Some(manifest_copy.clone()))),
@@ -104,11 +129,12 @@ mod tests {
                     ..Default::default()
                 };
 
-                let resolution = resolve_to_unqualified(specifier, parent, &config);
+                let resolution
+                    = resolve_to_unqualified(specifier, parent, &config);
 
                 match resolution {
                     Ok(Resolution::Resolved(path, _subpath)) => {
-                        assert_eq!(path.to_string_lossy(), test.expected, "{}", test.it);
+                        assert_eq!(path.to_string_lossy(), expected, "{}", test.it);
                     }
                     Ok(Resolution::Skipped) => {
                         assert_eq!(specifier, &test.expected, "{}", test.it);
