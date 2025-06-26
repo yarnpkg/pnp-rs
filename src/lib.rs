@@ -238,7 +238,7 @@ pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
         })?;
 
     lazy_static! {
-        static ref RE: Regex = Regex::new("(const\\s+RAW_RUNTIME_STATE\\s*=\\s*|hydrateRuntimeState\\(JSON\\.parse\\()'").unwrap();
+        static ref RE: Regex = Regex::new("(const[ \\n]+RAW_RUNTIME_STATE[ \\n]*=[ \\n]*|hydrateRuntimeState\\(JSON\\.parse\\()'").unwrap();
     }
 
     let manifest_match = RE.find(&manifest_content)
