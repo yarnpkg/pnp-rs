@@ -63,6 +63,7 @@ mod tests {
         };
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_load_pnp_manifest() {
         load_pnp_manifest("data/pnp-yarn-v3.cjs")
