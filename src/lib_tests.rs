@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::{Manifest, Resolution, ResolutionConfig};
+use crate::{Manifest, Resolution};
 
 #[derive(Deserialize)]
 struct Test {
@@ -22,20 +22,18 @@ mod tests {
 
     use super::*;
     use crate::{
-        ResolutionHost, init_pnp_manifest, load_pnp_manifest, parse_bare_identifier,
-        resolve_to_unqualified, resolve_to_unqualified_via_manifest,
+        ResolutionConfig, ResolutionHost, init_pnp_manifest, load_pnp_manifest,
+        parse_bare_identifier, resolve_to_unqualified, resolve_to_unqualified_via_manifest,
     };
 
     #[test]
     fn example() {
         let manifest = load_pnp_manifest("data/pnp-yarn-v3.cjs").unwrap();
 
-        let host = ResolutionHost {
-            find_pnp_manifest: Box::new(move |_| Ok(Some(manifest.clone()))),
-            ..Default::default()
-        };
+        let host =
+            ResolutionHost { find_pnp_manifest: Box::new(move |_| Ok(Some(manifest.clone()))) };
 
-        let config = ResolutionConfig { host, ..Default::default() };
+        let config = ResolutionConfig { host };
 
         let resolution = resolve_to_unqualified(
             "lodash/cloneDeep",
@@ -85,7 +83,7 @@ mod tests {
 
         for test_suite in test_suites.iter_mut() {
             let manifest = &mut test_suite.manifest;
-            init_pnp_manifest(manifest, &PathBuf::from("/path/to/project/.pnp.cjs"));
+            init_pnp_manifest(manifest, PathBuf::from("/path/to/project/.pnp.cjs"));
 
             for test in test_suite.tests.iter() {
                 let specifier = &test.imported;
@@ -95,10 +93,9 @@ mod tests {
 
                 let host = ResolutionHost {
                     find_pnp_manifest: Box::new(move |_| Ok(Some(manifest_copy.clone()))),
-                    ..Default::default()
                 };
 
-                let config = ResolutionConfig { host, ..Default::default() };
+                let config = ResolutionConfig { host };
 
                 let resolution = resolve_to_unqualified(specifier, parent, &config);
 
@@ -110,7 +107,7 @@ mod tests {
                         assert_eq!(specifier, &test.expected, "{}", test.it);
                     }
                     Err(err) => {
-                        assert_eq!(test.expected, "error!", "{}: {}", test.it, err.to_string());
+                        assert_eq!(test.expected, "error!", "{}: {err}", test.it);
                     }
                 }
             }

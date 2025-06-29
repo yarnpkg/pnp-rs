@@ -11,8 +11,8 @@ fn main() {
 
     let parent = args.next().map(PathBuf::from).expect("A parent url must be provided");
 
-    println!("specifier = {}", specifier);
-    println!("parent    = {:?}", parent);
+    println!("specifier = {specifier}");
+    println!("parent    = {parent:?}");
 
     let resolution = pnp::resolve_to_unqualified(
         &specifier,
@@ -23,14 +23,14 @@ fn main() {
     match resolution {
         Ok(res) => match res {
             Resolution::Resolved(p, subpath) => {
-                println!("result    = Package ({:?}, {:?})", p, subpath);
+                println!("result    = Package ({p:?}, {subpath:?})");
             }
             Resolution::Skipped => {
                 println!("result    = Skipped");
             }
         },
         Err(err) => {
-            println!("{}", err.to_string());
+            println!("{err}");
         }
     }
 }

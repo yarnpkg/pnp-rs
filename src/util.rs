@@ -25,7 +25,7 @@ impl<T> Trie<T> {
         self.inner.get_ancestor_value(&self.key(&key)).map(|t| &t.1)
     }
 
-    pub fn insert<P: AsRef<Path>>(&mut self, key: P, value: T) -> () {
+    pub fn insert<P: AsRef<Path>>(&mut self, key: P, value: T) {
         let k = self.key(&key);
         let p = PathBuf::from(k.clone());
 
