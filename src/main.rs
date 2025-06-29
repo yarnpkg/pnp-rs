@@ -1,4 +1,4 @@
-use pnp::{ResolutionConfig, Resolution};
+use pnp::{Resolution, ResolutionConfig};
 use std::path::PathBuf;
 
 fn main() {
@@ -7,31 +7,28 @@ fn main() {
     // Skip the program name
     args.next();
 
-    let specifier = args.next()
-        .expect("A specifier must be provided");
+    let specifier = args.next().expect("A specifier must be provided");
 
-    let parent = args.next()
-        .map(PathBuf::from)
-        .expect("A parent url must be provided");
+    let parent = args.next().map(PathBuf::from).expect("A parent url must be provided");
 
     println!("specifier = {}", specifier);
     println!("parent    = {:?}", parent);
 
-    let resolution = pnp::resolve_to_unqualified(&specifier, &parent, &ResolutionConfig {
-        ..Default::default()
-    });
+    let resolution = pnp::resolve_to_unqualified(
+        &specifier,
+        &parent,
+        &ResolutionConfig { ..Default::default() },
+    );
 
     match resolution {
-        Ok(res) => {
-            match res {
-                Resolution::Resolved(p, subpath) => {
-                    println!("result    = Package ({:?}, {:?})", p, subpath);
-                }
-                Resolution::Skipped => {
-                    println!("result    = Skipped");
-                }
+        Ok(res) => match res {
+            Resolution::Resolved(p, subpath) => {
+                println!("result    = Package ({:?}, {:?})", p, subpath);
             }
-        }
+            Resolution::Skipped => {
+                println!("result    = Skipped");
+            }
+        },
         Err(err) => {
             println!("{}", err.to_string());
         }

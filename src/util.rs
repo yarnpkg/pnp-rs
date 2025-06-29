@@ -1,9 +1,9 @@
 use fancy_regex::Regex;
-use serde::{de::Error, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de::Error};
 use std::borrow::Cow;
 
 use path_slash::PathBufExt;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default, Clone)]
 pub struct Trie<T> {
@@ -37,9 +37,7 @@ pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
     let original_str = original.as_ref();
 
     let p = PathBuf::from(original_str);
-    let mut str = clean_path::clean(p)
-        .to_slash_lossy()
-        .to_string();
+    let mut str = clean_path::clean(p).to_slash_lossy().to_string();
 
     if original_str.ends_with('/') && !str.ends_with('/') {
         str.push('/');
@@ -100,7 +98,8 @@ pub struct RegexDef(pub Regex);
 
 impl<'de> Deserialize<'de> for RegexDef {
     fn deserialize<D>(d: D) -> Result<RegexDef, D::Error>
-    where D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         let s = <Cow<str>>::deserialize(d)?;
 
