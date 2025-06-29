@@ -28,3 +28,14 @@ jobs:
       - run: cargo check
 
       - run: cargo test
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: taiki-e/checkout-action@v1
+
+      - uses: oxc-project/setup-rust@v1.0.0
+        with:
+          components: rustfmt
+
+      - run: cargo fmt --check

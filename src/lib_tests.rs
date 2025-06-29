@@ -22,8 +22,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        init_pnp_manifest, load_pnp_manifest, parse_bare_identifier, resolve_to_unqualified,
-        resolve_to_unqualified_via_manifest, ResolutionHost,
+        ResolutionHost, init_pnp_manifest, load_pnp_manifest, parse_bare_identifier,
+        resolve_to_unqualified, resolve_to_unqualified_via_manifest,
     };
 
     #[test]
@@ -35,10 +35,7 @@ mod tests {
             ..Default::default()
         };
 
-        let config = ResolutionConfig {
-            host,
-            ..Default::default()
-        };
+        let config = ResolutionConfig { host, ..Default::default() };
 
         let resolution = resolve_to_unqualified(
             "lodash/cloneDeep",
@@ -101,10 +98,7 @@ mod tests {
                     ..Default::default()
                 };
 
-                let config = ResolutionConfig {
-                    host,
-                    ..Default::default()
-                };
+                let config = ResolutionConfig { host, ..Default::default() };
 
                 let resolution = resolve_to_unqualified(specifier, parent, &config);
 
@@ -126,9 +120,8 @@ mod tests {
     #[test]
     fn test_edge_case_one_pkg_cached_and_unplugged() {
         let manifest = {
-            let manifest_json_path = std::env::current_dir()
-                .unwrap()
-                .join("./data/edge_case_manifest_state.json");
+            let manifest_json_path =
+                std::env::current_dir().unwrap().join("./data/edge_case_manifest_state.json");
             let manifest_content = fs::read_to_string(&manifest_json_path).unwrap();
             let mut manifest = serde_json::from_str::<Manifest>(&manifest_content).unwrap();
             init_pnp_manifest(&mut manifest, manifest_json_path);
@@ -167,18 +160,12 @@ mod tests {
     #[test]
     fn test_parse_package_name_with_long_subpath() {
         let parsed = parse_bare_identifier("pkg/a/b/c/index.js");
-        assert_eq!(
-            parsed,
-            Ok(("pkg".to_string(), Some("a/b/c/index.js".to_string())))
-        );
+        assert_eq!(parsed, Ok(("pkg".to_string(), Some("a/b/c/index.js".to_string()))));
     }
 
     #[test]
     fn test_parse_scoped_package_with_long_subpath() {
         let parsed = parse_bare_identifier("@scope/pkg/a/b/c/index.js");
-        assert_eq!(
-            parsed,
-            Ok(("@scope/pkg".to_string(), Some("a/b/c/index.js".to_string())))
-        );
+        assert_eq!(parsed, Ok(("@scope/pkg".to_string(), Some("a/b/c/index.js".to_string()))));
     }
 }
