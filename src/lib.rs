@@ -1,83 +1,27 @@
-#![expect(clippy::result_large_err)] // TODO: FIXME
-
 pub mod fs;
 
 mod builtins;
+mod error;
 mod util;
 mod zip;
+
+use std::{
+    collections::{HashMap, HashSet, hash_map::Entry},
+    path::{Path, PathBuf},
+};
 
 use fancy_regex::Regex;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serde_with::{DefaultOnNull, serde_as};
-use std::{
-    collections::{HashMap, HashSet, hash_map::Entry},
-    fmt,
-    path::{Path, PathBuf},
+
+use crate::util::RegexDef;
+
+pub use crate::error::{
+    BadSpecifier, Error, FailedManifestHydration, MissingDependency, MissingPeerDependency,
+    UndeclaredDependency,
 };
-use util::RegexDef;
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub enum Error {
-    BadSpecifier {
-        message: String,
-
-        specifier: String,
-    },
-
-    FailedManifestHydration {
-        message: String,
-
-        manifest_path: PathBuf,
-    },
-
-    MissingPeerDependency {
-        message: String,
-        request: String,
-
-        dependency_name: String,
-
-        issuer_locator: PackageLocator,
-        issuer_path: PathBuf,
-
-        broken_ancestors: Vec<PackageLocator>,
-    },
-
-    UndeclaredDependency {
-        message: String,
-        request: String,
-
-        dependency_name: String,
-
-        issuer_locator: PackageLocator,
-        issuer_path: PathBuf,
-    },
-
-    MissingDependency {
-        message: String,
-        request: String,
-
-        dependency_locator: PackageLocator,
-        dependency_name: String,
-
-        issuer_locator: PackageLocator,
-        issuer_path: PathBuf,
-    },
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let message = match &self {
-            Error::BadSpecifier { message, .. } => message.clone(),
-            Error::FailedManifestHydration { message, .. } => message.clone(),
-            Error::MissingPeerDependency { message, .. } => message.clone(),
-            Error::UndeclaredDependency { message, .. } => message.clone(),
-            Error::MissingDependency { message, .. } => message.clone(),
-        };
-        write!(f, "{message}")
-    }
-}
 
 #[derive(Debug)]
 pub enum Resolution {
@@ -206,9 +150,11 @@ pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>)
         false => parse_global_package_name(specifier),
     };
 
-    name.ok_or_else(|| Error::BadSpecifier {
-        message: String::from("Invalid specifier"),
-        specifier: specifier.to_string(),
+    name.ok_or_else(|| {
+        Error::BadSpecifier(Box::new(BadSpecifier {
+            message: String::from("Invalid specifier"),
+            specifier: specifier.to_string(),
+        }))
     })
 }
 
@@ -225,13 +171,14 @@ pub fn find_closest_pnp_manifest_path<P: AsRef<Path>>(p: P) -> Option<PathBuf> {
 }
 
 pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
-    let manifest_content =
-        std::fs::read_to_string(p.as_ref()).map_err(|err| Error::FailedManifestHydration {
+    let manifest_content = std::fs::read_to_string(p.as_ref()).map_err(|err| {
+        Error::FailedManifestHydration(Box::new(FailedManifestHydration {
             message: format!(
                 "We failed to read the content of the manifest.\n\nOriginal error: {err}"
             ),
             manifest_path: p.as_ref().to_path_buf(),
-        })?;
+        }))
+    })?;
 
     lazy_static! {
         static ref RE: Regex = Regex::new(
@@ -242,10 +189,10 @@ pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
 
     let manifest_match = RE.find(&manifest_content)
         .unwrap_or_default()
-        .ok_or_else(|| Error::FailedManifestHydration {
+        .ok_or_else(|| Error::FailedManifestHydration(Box::new(FailedManifestHydration {
             message: String::from("We failed to locate the PnP data payload inside its manifest file. Did you manually edit the file?"),
             manifest_path: p.as_ref().to_path_buf(),
-        })?;
+        })))?;
 
     let iter = manifest_content.chars().skip(manifest_match.end());
     let mut json_string = String::default();
@@ -267,10 +214,10 @@ pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
     }
 
     let mut manifest: Manifest = serde_json::from_str(&json_string.to_owned())
-        .map_err(|err| Error::FailedManifestHydration {
+        .map_err(|err| Error::FailedManifestHydration(Box::new(FailedManifestHydration {
             message: format!("We failed to parse the PnP data payload as proper JSON; Did you manually edit the file?\n\nOriginal error: {err}"),
             manifest_path: p.as_ref().to_path_buf(),
-        })?;
+        })))?;
 
     init_pnp_manifest(&mut manifest, p.as_ref());
 
@@ -449,13 +396,13 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                 )
             };
 
-            return Err(Error::UndeclaredDependency {
+            return Err(Error::UndeclaredDependency(Box::new(UndeclaredDependency {
                 message,
                 request: specifier.to_string(),
                 dependency_name: ident,
                 issuer_locator: parent_locator.clone(),
                 issuer_path: parent.as_ref().to_path_buf(),
-            });
+            })));
         }
 
         if let Some(resolution) = reference_or_alias {
@@ -513,14 +460,14 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                 )
             };
 
-            Err(Error::MissingPeerDependency {
+            Err(Error::MissingPeerDependency(Box::new(MissingPeerDependency {
                 message,
                 request: specifier.to_string(),
                 dependency_name: ident,
                 issuer_locator: parent_locator.clone(),
                 issuer_path: parent.as_ref().to_path_buf(),
                 broken_ancestors: [].to_vec(),
-            })
+            })))
         }
     } else {
         Ok(Resolution::Skipped)
