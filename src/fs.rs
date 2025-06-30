@@ -80,16 +80,14 @@ pub enum Error {
 
 #[cfg(feature = "mmap")]
 pub fn open_zip_via_mmap<P: AsRef<Path>>(p: P) -> Result<Zip<mmap_rs::Mmap>, std::io::Error> {
-    let file = fs::File::open(p)?;
+    let file = std::fs::File::open(p)?;
 
     let mmap_builder =
         mmap_rs::MmapOptions::new(file.metadata().unwrap().len().try_into().unwrap()).unwrap();
 
-    let mmap = unsafe { mmap_builder.with_file(file, 0).map().unwrap() };
+    let mmap = unsafe { mmap_builder.with_file(&file, 0).map().unwrap() };
 
-    let zip = Zip::new(mmap).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::Other, "Failed to read the zip file")
-    })?;
+    let zip = Zip::new(mmap).map_err(|_| std::io::Error::other("Failed to read the zip file"))?;
 
     Ok(zip)
 }
@@ -102,9 +100,7 @@ pub fn open_zip_via_mmap_p(p: &Path) -> Result<Zip<mmap_rs::Mmap>, std::io::Erro
 pub fn open_zip_via_read<P: AsRef<Path>>(p: P) -> Result<Zip<Vec<u8>>, std::io::Error> {
     let data = std::fs::read(p)?;
 
-    let zip = Zip::new(data).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::Other, "Failed to read the zip file")
-    })?;
+    let zip = Zip::new(data).map_err(|_| std::io::Error::other("Failed to read the zip file"))?;
 
     Ok(zip)
 }
@@ -167,7 +163,7 @@ where
         p: P,
         cb: F,
     ) -> Result<T, std::io::Error> {
-        let zip = self.lru.get_or_try_init(p.as_ref().to_path_buf(), 1, |p| (self.open)(&p))?;
+        let zip = self.lru.get_or_try_init(p.as_ref().to_path_buf(), 1, |p| (self.open)(p))?;
 
         Ok(cb(zip.value()))
     }
@@ -315,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_zip_type_api() {
-        let zip = open_zip_via_read(&PathBuf::from(
+        let zip = open_zip_via_read(PathBuf::from(
             "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
         ))
         .unwrap();
@@ -327,7 +323,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Kind(NotFound)")]
     fn test_zip_type_api_not_exist_dir_with_slash() {
-        let zip = open_zip_via_read(&PathBuf::from(
+        let zip = open_zip_via_read(PathBuf::from(
             "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
         ))
         .unwrap();
@@ -338,7 +334,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Kind(NotFound)")]
     fn test_zip_type_api_not_exist_dir_without_slash() {
-        let zip = open_zip_via_read(&PathBuf::from(
+        let zip = open_zip_via_read(PathBuf::from(
             "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
         ))
         .unwrap();
@@ -348,7 +344,7 @@ mod tests {
 
     #[test]
     fn test_zip_list() {
-        let zip = open_zip_via_read(&PathBuf::from(
+        let zip = open_zip_via_read(PathBuf::from(
             "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
         ))
         .unwrap();
@@ -382,7 +378,7 @@ mod tests {
 
     #[test]
     fn test_zip_read() {
-        let zip = open_zip_via_read(&PathBuf::from(
+        let zip = open_zip_via_read(PathBuf::from(
             "data/@babel-plugin-syntax-dynamic-import-npm-7.8.3-fb9ff5634a-8.zip",
         ))
         .unwrap();
@@ -472,10 +468,10 @@ mod tests {
 
         match vpath(&PathBuf::from(input)) {
             Ok(res) => {
-                assert_eq!(res, expectation, "input='{:?}'", input);
+                assert_eq!(res, expectation, "input='{input:?}'");
             }
             Err(err) => {
-                panic!("{:?}: {}", input, err);
+                panic!("{input:?}: {err}");
             }
         }
     }

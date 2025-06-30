@@ -67,11 +67,7 @@ where
     }
 
     fn is_dir(&self, p: &str) -> bool {
-        if p.ends_with('/') {
-            self.dirs.contains(p)
-        } else {
-            self.dirs.contains(&format!("{}/", p))
-        }
+        if p.ends_with('/') { self.dirs.contains(p) } else { self.dirs.contains(&format!("{p}/")) }
     }
 
     pub fn read(&self, p: &str) -> Result<Vec<u8>, std::io::Error> {
@@ -82,10 +78,8 @@ where
 
         match entry.compression {
             Compression::Deflate => {
-                let decompressed_data =
-                    miniz_oxide::inflate::decompress_to_vec(&slice).map_err(|_| {
-                        std::io::Error::new(std::io::ErrorKind::Other, "Error during decompression")
-                    })?;
+                let decompressed_data = miniz_oxide::inflate::decompress_to_vec(slice)
+                    .map_err(|_| std::io::Error::other("Error during decompression"))?;
 
                 Ok(decompressed_data)
             }
@@ -140,6 +134,7 @@ fn find_central_directory_offset(cursor: &mut Cursor<&[u8]>) -> Result<u64, Box<
     Err("End of central directory record not found.".into())
 }
 
+#[expect(clippy::type_complexity)]
 fn read_central_file_header(
     cursor: &mut Cursor<&[u8]>,
 ) -> Result<Option<(String, Option<Entry>)>, Box<dyn Error>> {

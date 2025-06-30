@@ -1,3 +1,5 @@
+#![expect(clippy::result_large_err)] // TODO: FIXME
+
 pub mod fs;
 
 mod builtins;
@@ -11,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{DefaultOnNull, serde_as};
 use std::{
     collections::{HashMap, HashSet, hash_map::Entry},
+    fmt,
     path::{Path, PathBuf},
 };
 use util::RegexDef;
@@ -63,15 +66,16 @@ pub enum Error {
     },
 }
 
-impl ToString for Error {
-    fn to_string(&self) -> String {
-        match &self {
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match &self {
             Error::BadSpecifier { message, .. } => message.clone(),
             Error::FailedManifestHydration { message, .. } => message.clone(),
             Error::MissingPeerDependency { message, .. } => message.clone(),
             Error::UndeclaredDependency { message, .. } => message.clone(),
             Error::MissingDependency { message, .. } => message.clone(),
-        }
+        };
+        write!(f, "{message}")
     }
 }
 
@@ -82,6 +86,7 @@ pub enum Resolution {
 }
 
 pub struct ResolutionHost {
+    #[allow(clippy::type_complexity)]
     pub find_pnp_manifest: Box<dyn Fn(&Path) -> Result<Option<Manifest>, Error>>,
 }
 
@@ -172,13 +177,9 @@ pub struct Manifest {
 fn parse_scoped_package_name(specifier: &str) -> Option<(String, Option<String>)> {
     let mut segments = specifier.splitn(3, '/');
 
-    let Some(scope) = segments.next() else {
-        return None;
-    };
+    let scope = segments.next()?;
 
-    let Some(name) = segments.next() else {
-        return None;
-    };
+    let name = segments.next()?;
 
     let package_name = specifier[..scope.len() + name.len() + 1].to_string();
 
@@ -190,9 +191,7 @@ fn parse_scoped_package_name(specifier: &str) -> Option<(String, Option<String>)
 fn parse_global_package_name(specifier: &str) -> Option<(String, Option<String>)> {
     let mut segments = specifier.splitn(2, '/');
 
-    let Some(name) = segments.next() else {
-        return None;
-    };
+    let name = segments.next()?;
 
     let package_name = name.to_string();
 
@@ -229,8 +228,7 @@ pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
     let manifest_content =
         std::fs::read_to_string(p.as_ref()).map_err(|err| Error::FailedManifestHydration {
             message: format!(
-                "We failed to read the content of the manifest.\n\nOriginal error: {}",
-                err.to_string()
+                "We failed to read the content of the manifest.\n\nOriginal error: {err}"
             ),
             manifest_path: p.as_ref().to_path_buf(),
         })?;
@@ -270,7 +268,7 @@ pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
 
     let mut manifest: Manifest = serde_json::from_str(&json_string.to_owned())
         .map_err(|err| Error::FailedManifestHydration {
-            message: format!("We failed to parse the PnP data payload as proper JSON; Did you manually edit the file?\n\nOriginal error: {}", err.to_string()),
+            message: format!("We failed to parse the PnP data payload as proper JSON; Did you manually edit the file?\n\nOriginal error: {err}"),
             manifest_path: p.as_ref().to_path_buf(),
         })?;
 
@@ -288,7 +286,7 @@ pub fn init_pnp_manifest<P: AsRef<Path>>(manifest: &mut Manifest, p: P) {
         for (reference, info) in ranges.iter_mut() {
             let package_location = manifest.manifest_dir.join(info.package_location.clone());
 
-            let normalized_location = util::normalize_path(&package_location.to_string_lossy());
+            let normalized_location = util::normalize_path(package_location.to_string_lossy());
 
             info.package_location = PathBuf::from(normalized_location);
 
@@ -366,7 +364,7 @@ pub fn find_broken_peer_dependencies(
     _dependency: &str,
     _initial_package: &PackageLocator,
 ) -> Vec<PackageLocator> {
-    vec![].to_vec()
+    [].to_vec()
 }
 
 pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
@@ -425,32 +423,30 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                         issuer_path = parent.as_ref().to_string_lossy(),
                     )
                 }
+            } else if is_dependency_tree_root(manifest, parent_locator) {
+                format!(
+                    "Your application tried to access {dependency_name}, but it isn't declared in your dependencies; this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: {issuer_path}",
+                    dependency_name = &ident,
+                    via = if ident != specifier {
+                        format!(" (via \"{}\")", &specifier)
+                    } else {
+                        String::from("")
+                    },
+                    issuer_path = parent.as_ref().to_string_lossy(),
+                )
             } else {
-                if is_dependency_tree_root(manifest, parent_locator) {
-                    format!(
-                        "Your application tried to access {dependency_name}, but it isn't declared in your dependencies; this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: {issuer_path}",
-                        dependency_name = &ident,
-                        via = if ident != specifier {
-                            format!(" (via \"{}\")", &specifier)
-                        } else {
-                            String::from("")
-                        },
-                        issuer_path = parent.as_ref().to_string_lossy(),
-                    )
-                } else {
-                    format!(
-                        "{issuer_locator_name} tried to access {dependency_name}, but it isn't declared in its dependencies; this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: {issuer_locator_name}@{issuer_locator_reference} (via {issuer_path})",
-                        issuer_locator_name = &parent_locator.name,
-                        issuer_locator_reference = &parent_locator.reference,
-                        dependency_name = &ident,
-                        via = if ident != specifier {
-                            format!(" (via \"{}\")", &specifier)
-                        } else {
-                            String::from("")
-                        },
-                        issuer_path = parent.as_ref().to_string_lossy(),
-                    )
-                }
+                format!(
+                    "{issuer_locator_name} tried to access {dependency_name}, but it isn't declared in its dependencies; this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: {issuer_locator_name}@{issuer_locator_reference} (via {issuer_path})",
+                    issuer_locator_name = &parent_locator.name,
+                    issuer_locator_reference = &parent_locator.reference,
+                    dependency_name = &ident,
+                    via = if ident != specifier {
+                        format!(" (via \"{}\")", &specifier)
+                    } else {
+                        String::from("")
+                    },
+                    issuer_path = parent.as_ref().to_string_lossy(),
+                )
             };
 
             return Err(Error::UndeclaredDependency {
@@ -474,7 +470,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
 
             Ok(Resolution::Resolved(dependency_pkg.package_location.clone(), module_path))
         } else {
-            let broken_ancestors = find_broken_peer_dependencies(&specifier, parent_locator);
+            let broken_ancestors = find_broken_peer_dependencies(specifier, parent_locator);
 
             let message = if is_dependency_tree_root(manifest, parent_locator) {
                 format!(
@@ -523,7 +519,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                 dependency_name: ident,
                 issuer_locator: parent_locator.clone(),
                 issuer_path: parent.as_ref().to_path_buf(),
-                broken_ancestors: vec![].to_vec(),
+                broken_ancestors: [].to_vec(),
             })
         }
     } else {
