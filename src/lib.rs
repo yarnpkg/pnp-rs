@@ -9,11 +9,11 @@ use std::{
     collections::hash_map::Entry,
     hash::BuildHasherDefault,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 use fancy_regex::Regex;
 use indexmap::IndexMap;
-use lazy_static::lazy_static;
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use serde::{Deserialize, Serialize};
 use serde_with::{DefaultOnNull, serde_as};
@@ -183,14 +183,16 @@ pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
         }))
     })?;
 
-    lazy_static! {
-        static ref RE: Regex = Regex::new(
-            "(const[ \\r\\n]+RAW_RUNTIME_STATE[ \\r\\n]*=[ \\r\\n]*|hydrateRuntimeState\\(JSON\\.parse\\()'"
-        )
-        .unwrap();
-    }
+    static RE: OnceLock<Regex> = OnceLock::new();
 
-    let manifest_match = RE.find(&manifest_content)
+    let manifest_match =
+        RE.get_or_init(|| {
+            Regex::new(
+                "(const[ \\r\\n]+RAW_RUNTIME_STATE[ \\r\\n]*=[ \\r\\n]*|hydrateRuntimeState\\(JSON\\.parse\\()'"
+            )
+            .unwrap()
+        })
+        .find(&manifest_content)
         .unwrap_or_default()
         .ok_or_else(|| Error::FailedManifestHydration(Box::new(FailedManifestHydration {
             message: String::from("We failed to locate the PnP data payload inside its manifest file. Did you manually edit the file?"),
