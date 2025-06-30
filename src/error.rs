@@ -1,11 +1,10 @@
 use std::path::PathBuf;
 
-use serde::Serialize;
 use thiserror::Error;
 
 use crate::PackageLocator;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Error)]
+#[derive(Debug, Clone, PartialEq, Error)]
 pub enum Error {
     #[error(transparent)]
     BadSpecifier(Box<BadSpecifier>),
@@ -23,21 +22,21 @@ pub enum Error {
     MissingDependency(Box<MissingDependency>),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Error)]
+#[derive(Debug, Clone, PartialEq, Error)]
 #[error("{message}")]
 pub struct BadSpecifier {
     pub message: String,
     pub specifier: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Error)]
+#[derive(Debug, Clone, PartialEq, Error)]
 #[error("{message}")]
 pub struct FailedManifestHydration {
     pub message: String,
     pub manifest_path: PathBuf,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Error)]
+#[derive(Debug, Clone, PartialEq, Error)]
 #[error("{message}")]
 pub struct MissingPeerDependency {
     pub message: String,
@@ -51,7 +50,7 @@ pub struct MissingPeerDependency {
     pub broken_ancestors: Vec<PackageLocator>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Error)]
+#[derive(Debug, Clone, PartialEq, Error)]
 #[error("{message}")]
 pub struct UndeclaredDependency {
     pub message: String,
@@ -63,7 +62,7 @@ pub struct UndeclaredDependency {
     pub issuer_path: PathBuf,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Error)]
+#[derive(Debug, Clone, PartialEq, Error)]
 #[error("{message}")]
 pub struct MissingDependency {
     pub message: String,
