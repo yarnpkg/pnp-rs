@@ -6,13 +6,15 @@ mod util;
 mod zip;
 
 use std::{
-    collections::{HashMap, HashSet, hash_map::Entry},
+    collections::hash_map::Entry,
+    hash::BuildHasherDefault,
     path::{Path, PathBuf},
 };
 
 use fancy_regex::Regex;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use serde::{Deserialize, Serialize};
 use serde_with::{DefaultOnNull, serde_as};
 
@@ -68,7 +70,7 @@ pub struct PackageInformation {
     discard_from_lookup: bool,
 
     #[serde_as(as = "Vec<(_, Option<_>)>")]
-    package_dependencies: HashMap<String, Option<PackageDependency>>,
+    package_dependencies: FxHashMap<String, Option<PackageDependency>>,
 }
 
 #[serde_as]
@@ -91,21 +93,21 @@ pub struct Manifest {
     //   "name": "@app/monorepo",
     //   "workspace:."
     // }]
-    dependency_tree_roots: HashSet<PackageLocator>,
+    dependency_tree_roots: FxHashSet<PackageLocator>,
 
     // fallbackPool: [[
     //   "@app/monorepo",
     //   "workspace:.",
     // ]]
     #[serde_as(as = "Vec<(_, _)>")]
-    fallback_pool: HashMap<String, Option<PackageDependency>>,
+    fallback_pool: FxHashMap<String, Option<PackageDependency>>,
 
     // fallbackExclusionList: [[
     //   "@app/server",
     //  ["workspace:sources/server"],
     // ]]
     #[serde_as(as = "Vec<(_, _)>")]
-    fallback_exclusion_list: HashMap<String, HashSet<String>>,
+    fallback_exclusion_list: FxHashMap<String, FxHashSet<String>>,
 
     // packageRegistryData: [
     //   [null, [
@@ -115,7 +117,8 @@ pub struct Manifest {
     //   }]
     // ]
     #[serde_as(as = "Vec<(DefaultOnNull<_>, Vec<(DefaultOnNull<_>, _)>)>")]
-    package_registry_data: HashMap<String, IndexMap<String, PackageInformation>>,
+    package_registry_data:
+        FxHashMap<String, IndexMap<String, PackageInformation, BuildHasherDefault<FxHasher>>>,
 }
 
 fn parse_scoped_package_name(specifier: &str) -> Option<(String, Option<String>)> {
