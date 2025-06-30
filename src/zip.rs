@@ -1,8 +1,10 @@
+use std::{
+    error::Error,
+    io::{Cursor, Read},
+};
+
 use byteorder::{LittleEndian, ReadBytesExt};
-use std::collections::{HashMap, HashSet};
-use std::error::Error;
-use std::io::Cursor;
-use std::io::Read;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::fs::FileType;
 use crate::util;
@@ -26,8 +28,8 @@ where
     T: AsRef<[u8]>,
 {
     storage: T,
-    pub files: HashMap<String, Entry>,
-    pub dirs: HashSet<String>,
+    pub files: FxHashMap<String, Entry>,
+    pub dirs: FxHashSet<String>,
 }
 
 impl<T> Zip<T>
@@ -103,8 +105,8 @@ fn make_io_utf8_error() -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, "File did not contain valid UTF-8")
 }
 
-pub fn list_zip_entries(data: &[u8]) -> Result<HashMap<String, Option<Entry>>, Box<dyn Error>> {
-    let mut zip_entries = HashMap::new();
+pub fn list_zip_entries(data: &[u8]) -> Result<FxHashMap<String, Option<Entry>>, Box<dyn Error>> {
+    let mut zip_entries = FxHashMap::default();
     let mut cursor = Cursor::new(data);
 
     let central_directory_offset = find_central_directory_offset(&mut cursor)?;
