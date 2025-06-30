@@ -187,6 +187,7 @@ pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
         .unwrap();
     }
 
+    dbg!(&manifest_content);
     let manifest_match = RE.find(&manifest_content)
         .unwrap_or_default()
         .ok_or_else(|| Error::FailedManifestHydration(Box::new(FailedManifestHydration {
