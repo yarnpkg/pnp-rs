@@ -12,7 +12,6 @@ byteorder = "1"
 clean-path = "0.2.1"
 concurrent_lru = "^0.2"
 fancy-regex = { version = "^0.14.0", default-features = false, features = ["std"] }
-indexmap = { version = "2", default-features = true, features = ["serde"] }
 miniz_oxide = "^0.8"
 mmap-rs = { version = "^0.6", optional = true }
 path-slash = "0.2.1"
