@@ -15,7 +15,7 @@ use std::{
 use fancy_regex::Regex;
 use indexmap::IndexMap;
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_with::{DefaultOnNull, serde_as};
 
 use crate::util::RegexDef;
@@ -47,7 +47,7 @@ pub struct ResolutionConfig {
     pub host: ResolutionHost,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq)]
 pub struct PackageLocator {
     name: String,
     reference: String,
