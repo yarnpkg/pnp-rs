@@ -2,27 +2,24 @@ pub mod fs;
 
 mod builtins;
 mod error;
+mod manifest;
 mod util;
 mod zip;
 
 use std::{
     collections::hash_map::Entry,
-    hash::BuildHasherDefault,
     path::{Path, PathBuf},
     sync::OnceLock,
 };
 
 use fancy_regex::Regex;
-use indexmap::IndexMap;
-use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
-use serde::Deserialize;
-use serde_with::{DefaultOnNull, serde_as};
 
-use crate::util::RegexDef;
-
-pub use crate::error::{
-    BadSpecifier, Error, FailedManifestHydration, MissingDependency, MissingPeerDependency,
-    UndeclaredDependency,
+pub use crate::{
+    error::{
+        BadSpecifier, Error, FailedManifestHydration, MissingDependency, MissingPeerDependency,
+        UndeclaredDependency,
+    },
+    manifest::{Manifest, PackageDependency, PackageInformation, PackageLocator},
 };
 
 #[derive(Debug)]
@@ -45,80 +42,6 @@ impl Default for ResolutionHost {
 #[derive(Default)]
 pub struct ResolutionConfig {
     pub host: ResolutionHost,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq)]
-pub struct PackageLocator {
-    name: String,
-    reference: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(untagged)]
-enum PackageDependency {
-    Reference(String),
-    Alias(String, String),
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PackageInformation {
-    package_location: PathBuf,
-
-    #[serde(default)]
-    discard_from_lookup: bool,
-
-    #[serde_as(as = "Vec<(_, Option<_>)>")]
-    package_dependencies: FxHashMap<String, Option<PackageDependency>>,
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Manifest {
-    #[serde(skip_deserializing)]
-    pub manifest_dir: PathBuf,
-
-    #[serde(skip_deserializing)]
-    pub manifest_path: PathBuf,
-
-    #[serde(skip_deserializing)]
-    location_trie: util::Trie<PackageLocator>,
-
-    enable_top_level_fallback: bool,
-    ignore_pattern_data: Option<RegexDef>,
-
-    // dependencyTreeRoots: [{
-    //   "name": "@app/monorepo",
-    //   "workspace:."
-    // }]
-    dependency_tree_roots: FxHashSet<PackageLocator>,
-
-    // fallbackPool: [[
-    //   "@app/monorepo",
-    //   "workspace:.",
-    // ]]
-    #[serde_as(as = "Vec<(_, _)>")]
-    fallback_pool: FxHashMap<String, Option<PackageDependency>>,
-
-    // fallbackExclusionList: [[
-    //   "@app/server",
-    //  ["workspace:sources/server"],
-    // ]]
-    #[serde_as(as = "Vec<(_, _)>")]
-    fallback_exclusion_list: FxHashMap<String, FxHashSet<String>>,
-
-    // packageRegistryData: [
-    //   [null, [
-    //     [null, {
-    //       ...
-    //     }]
-    //   }]
-    // ]
-    #[serde_as(as = "Vec<(DefaultOnNull<_>, Vec<(DefaultOnNull<_>, _)>)>")]
-    package_registry_data:
-        FxHashMap<String, IndexMap<String, PackageInformation, BuildHasherDefault<FxHasher>>>,
 }
 
 fn parse_scoped_package_name(specifier: &str) -> Option<(String, Option<String>)> {
