@@ -1,7 +1,6 @@
-use std::{hash::BuildHasherDefault, path::PathBuf};
+use std::path::PathBuf;
 
-use indexmap::IndexMap;
-use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, de::Deserializer};
 
 use crate::util::{RegexDef, Trie};
@@ -49,8 +48,7 @@ pub struct Manifest {
     //   }]
     // ]
     #[serde(deserialize_with = "deserialize_package_registry_data")]
-    pub package_registry_data:
-        FxHashMap<String, IndexMap<String, PackageInformation, BuildHasherDefault<FxHasher>>>,
+    pub package_registry_data: FxHashMap<String, FxHashMap<String, PackageInformation>>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Deserialize)]
@@ -110,13 +108,9 @@ where
     Ok(map)
 }
 
-#[expect(clippy::type_complexity)]
 fn deserialize_package_registry_data<'de, D>(
     deserializer: D,
-) -> Result<
-    FxHashMap<String, IndexMap<String, PackageInformation, BuildHasherDefault<FxHasher>>>,
-    D::Error,
->
+) -> Result<FxHashMap<String, FxHashMap<String, PackageInformation>>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -126,7 +120,7 @@ where
     let mut map = FxHashMap::default();
     for item in Vec::<Item>::deserialize(deserializer)? {
         let key = item.0.unwrap_or_else(|| "".to_string());
-        let value = IndexMap::from_iter(
+        let value = FxHashMap::from_iter(
             item.1.into_iter().map(|(k, v)| (k.unwrap_or_else(|| "".to_string()), v)),
         );
         map.insert(key, value);
