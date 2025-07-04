@@ -84,16 +84,14 @@ pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>)
     })
 }
 
-pub fn find_closest_pnp_manifest_path<P: AsRef<Path>>(p: P) -> Option<PathBuf> {
-    let pnp_path = p.as_ref().join(".pnp.cjs");
-
-    if pnp_path.exists() {
-        Some(pnp_path)
-    } else if let Some(directory_path) = p.as_ref().parent() {
-        find_closest_pnp_manifest_path(directory_path)
-    } else {
-        None
+pub fn find_closest_pnp_manifest_path(path: &Path) -> Option<PathBuf> {
+    for p in path.ancestors() {
+        let pnp_path = p.join(".pnp.cjs");
+        if pnp_path.exists() {
+            return Some(pnp_path);
+        }
     }
+    None
 }
 
 pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
