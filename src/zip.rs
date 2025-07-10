@@ -1,8 +1,10 @@
-use std::collections::{HashMap, HashSet};
-use std::io::Cursor;
-use std::error::Error;
-use byteorder::{ReadBytesExt, LittleEndian};
-use std::io::Read;
+use std::{
+    error::Error,
+    io::{Cursor, Read},
+};
+
+use byteorder::{LittleEndian, ReadBytesExt};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::fs::FileType;
 use crate::util;
@@ -21,20 +23,21 @@ pub struct Entry {
 }
 
 #[derive(Debug)]
-pub struct Zip<T> where T : AsRef<[u8]> {
+pub struct Zip<T>
+where
+    T: AsRef<[u8]>,
+{
     storage: T,
-    pub files: HashMap<String, Entry>,
-    pub dirs: HashSet<String>,
+    pub files: FxHashMap<String, Entry>,
+    pub dirs: FxHashSet<String>,
 }
 
 impl<T> Zip<T>
-where T : AsRef<[u8]> {
+where
+    T: AsRef<[u8]>,
+{
     pub fn new(storage: T) -> Result<Zip<T>, Box<dyn Error>> {
-        let mut zip = Zip {
-            storage,
-            files: Default::default(),
-            dirs: Default::default(),
-        };
+        let mut zip = Zip { storage, files: Default::default(), dirs: Default::default() };
 
         for (name, maybe_entry) in list_zip_entries(zip.storage.as_ref())? {
             let name = util::normalize_path(name);
@@ -66,31 +69,24 @@ where T : AsRef<[u8]> {
     }
 
     fn is_dir(&self, p: &str) -> bool {
-        if p.ends_with('/') {
-            self.dirs.contains(p)
-        } else {
-            self.dirs.contains(&format!("{}/", p))
-        }
+        if p.ends_with('/') { self.dirs.contains(p) } else { self.dirs.contains(&format!("{p}/")) }
     }
 
     pub fn read(&self, p: &str) -> Result<Vec<u8>, std::io::Error> {
-        let entry = self.files.get(p)
-            .ok_or(std::io::Error::from(std::io::ErrorKind::NotFound))?;
+        let entry = self.files.get(p).ok_or(std::io::Error::from(std::io::ErrorKind::NotFound))?;
 
         let data = self.storage.as_ref();
         let slice = &data[entry.offset..entry.offset + entry.size];
 
         match entry.compression {
             Compression::Deflate => {
-                let decompressed_data = miniz_oxide::inflate::decompress_to_vec(&slice)
-                    .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Error during decompression"))?;
+                let decompressed_data = miniz_oxide::inflate::decompress_to_vec(slice)
+                    .map_err(|_| std::io::Error::other("Error during decompression"))?;
 
                 Ok(decompressed_data)
             }
 
-            Compression::Uncompressed => {
-                Ok(slice.to_vec())
-            }
+            Compression::Uncompressed => Ok(slice.to_vec()),
         }
     }
 
@@ -102,19 +98,15 @@ where T : AsRef<[u8]> {
 }
 
 fn io_bytes_to_str(vec: &[u8]) -> Result<&str, std::io::Error> {
-    std::str::from_utf8(vec)
-        .map_err(|_| make_io_utf8_error())
+    std::str::from_utf8(vec).map_err(|_| make_io_utf8_error())
 }
 
 fn make_io_utf8_error() -> std::io::Error {
-    std::io::Error::new(
-        std::io::ErrorKind::InvalidData,
-        "File did not contain valid UTF-8"
-    )
+    std::io::Error::new(std::io::ErrorKind::InvalidData, "File did not contain valid UTF-8")
 }
 
-pub fn list_zip_entries(data: &[u8]) -> Result<HashMap<String, Option<Entry>>, Box<dyn Error>> {
-    let mut zip_entries = HashMap::new();
+pub fn list_zip_entries(data: &[u8]) -> Result<FxHashMap<String, Option<Entry>>, Box<dyn Error>> {
+    let mut zip_entries = FxHashMap::default();
     let mut cursor = Cursor::new(data);
 
     let central_directory_offset = find_central_directory_offset(&mut cursor)?;
@@ -144,7 +136,10 @@ fn find_central_directory_offset(cursor: &mut Cursor<&[u8]>) -> Result<u64, Box<
     Err("End of central directory record not found.".into())
 }
 
-fn read_central_file_header(cursor: &mut Cursor<&[u8]>) -> Result<Option<(String, Option<Entry>)>, Box<dyn Error>> {
+#[expect(clippy::type_complexity)]
+fn read_central_file_header(
+    cursor: &mut Cursor<&[u8]>,
+) -> Result<Option<(String, Option<Entry>)>, Box<dyn Error>> {
     let signature = cursor.read_u32::<LittleEndian>()?;
     if signature != 0x02014b50 {
         return Ok(None);
@@ -160,7 +155,8 @@ fn read_central_file_header(cursor: &mut Cursor<&[u8]>) -> Result<Option<(String
         0 => Ok(Compression::Uncompressed),
         8 => Ok(Compression::Deflate),
         _ => Err("Oh no"),
-    }.unwrap();
+    }
+    .unwrap();
 
     let _crc32 = cursor.read_u32::<LittleEndian>()?;
     let compressed_size = cursor.read_u32::<LittleEndian>()? as u64;
@@ -188,9 +184,14 @@ fn read_central_file_header(cursor: &mut Cursor<&[u8]>) -> Result<Option<(String
     let mut local_file_header_cursor = cursor.clone();
     local_file_header_cursor.set_position(local_header_offset + 26);
 
-    let local_file_header_file_name_length = local_file_header_cursor.read_u16::<LittleEndian>()? as usize;
-    let local_file_header_extra_field_length = local_file_header_cursor.read_u16::<LittleEndian>()? as usize;
-    let file_data_offset = local_header_offset + 30 + local_file_header_file_name_length as u64 + local_file_header_extra_field_length as u64;
+    let local_file_header_file_name_length =
+        local_file_header_cursor.read_u16::<LittleEndian>()? as usize;
+    let local_file_header_extra_field_length =
+        local_file_header_cursor.read_u16::<LittleEndian>()? as usize;
+    let file_data_offset = local_header_offset
+        + 30
+        + local_file_header_file_name_length as u64
+        + local_file_header_extra_field_length as u64;
 
     let entry = Entry {
         compression,
