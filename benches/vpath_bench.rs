@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::path::Path;
+use std::time::Duration;
 use pnp::fs::VPath;
 
 fn bench_vpath_native(c: &mut Criterion) {
@@ -9,7 +10,7 @@ fn bench_vpath_native(c: &mut Criterion) {
         "/home/user/project/src/main.rs",
         "/very/long/path/with/many/segments/that/could/be/expensive/to/parse",
     ];
-    
+
     c.bench_function("vpath_native", |b| {
         b.iter(|| {
             for path in &paths {
@@ -26,7 +27,7 @@ fn bench_vpath_virtual(c: &mut Criterion) {
         "/deep/path/__virtual__/ghi789/1/node_modules/nested/package/src/file.ts",
         "/complex/__virtual__/jkl012/3/node_modules/very-long-package-name/dist/bundle.js",
     ];
-    
+
     c.bench_function("vpath_virtual", |b| {
         b.iter(|| {
             for path in &paths {
@@ -43,7 +44,7 @@ fn bench_vpath_zip(c: &mut Criterion) {
         "/project/deps/bundle.zip/dist/app.js",
         "/deep/path/to/package.zip/nested/file.json",
     ];
-    
+
     c.bench_function("vpath_zip", |b| {
         b.iter(|| {
             for path in &paths {
@@ -59,7 +60,7 @@ fn bench_vpath_virtual_zip(c: &mut Criterion) {
         "/project/__virtual__/def456/2/node_modules/some-package/bundle.zip/dist/app.js",
         "/deep/path/__virtual__/ghi789/1/node_modules/nested/package.zip/src/file.ts",
     ];
-    
+
     c.bench_function("vpath_virtual_zip", |b| {
         b.iter(|| {
             for path in &paths {
@@ -81,7 +82,7 @@ fn bench_vpath_edge_cases(c: &mut Criterion) {
         "/malformed/__virtual__/incomplete",
         "/fake/__virtual__/abc123/not_a_number/path",
     ];
-    
+
     c.bench_function("vpath_edge_cases", |b| {
         b.iter(|| {
             for path in &paths {
@@ -102,7 +103,7 @@ fn bench_vpath_mixed_workload(c: &mut Criterion) {
         "/project/deps/bundle.zip/nested/file.json",
         "/home/user/project/src/main.rs",
     ];
-    
+
     c.bench_function("vpath_mixed_workload", |b| {
         b.iter(|| {
             for path in &paths {
@@ -112,13 +113,10 @@ fn bench_vpath_mixed_workload(c: &mut Criterion) {
     });
 }
 
-criterion_group!(
-    benches,
-    bench_vpath_native,
-    bench_vpath_virtual,
-    bench_vpath_zip,
-    bench_vpath_virtual_zip,
-    bench_vpath_edge_cases,
-    bench_vpath_mixed_workload,
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default().sample_size(1000).measurement_time(Duration::from_secs(10));
+    targets = bench_vpath_native, bench_vpath_virtual, bench_vpath_zip, bench_vpath_virtual_zip, bench_vpath_edge_cases, bench_vpath_mixed_workload
+}
+
 criterion_main!(benches);

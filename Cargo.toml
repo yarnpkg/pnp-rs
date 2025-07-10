@@ -26,6 +26,14 @@ rustc-hash = "2"
 rstest = "0.25.0"
 criterion = "0.5"
 
+[lib]
+bench = false
+
+[[bin]]
+name = "pnp"
+path = "src/main.rs"
+bench = false
+
 [[bench]]
 name = "vpath_bench"
 harness = false
