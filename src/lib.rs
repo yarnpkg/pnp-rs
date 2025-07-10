@@ -94,13 +94,13 @@ pub fn find_closest_pnp_manifest_path(path: &Path) -> Option<PathBuf> {
     None
 }
 
-pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
-    let manifest_content = std::fs::read_to_string(p.as_ref()).map_err(|err| {
+pub fn load_pnp_manifest(p: &Path) -> Result<Manifest, Error> {
+    let manifest_content = std::fs::read_to_string(p).map_err(|err| {
         Error::FailedManifestHydration(Box::new(FailedManifestHydration {
             message: format!(
                 "We failed to read the content of the manifest.\n\nOriginal error: {err}"
             ),
-            manifest_path: p.as_ref().to_path_buf(),
+            manifest_path: p.to_path_buf(),
         }))
     })?;
 
@@ -117,7 +117,7 @@ pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
         .unwrap_or_default()
         .ok_or_else(|| Error::FailedManifestHydration(Box::new(FailedManifestHydration {
             message: String::from("We failed to locate the PnP data payload inside its manifest file. Did you manually edit the file?"),
-            manifest_path: p.as_ref().to_path_buf(),
+            manifest_path: p.to_path_buf(),
         })))?;
 
     let iter = manifest_content.chars().skip(manifest_match.end());
@@ -142,18 +142,18 @@ pub fn load_pnp_manifest<P: AsRef<Path>>(p: P) -> Result<Manifest, Error> {
     let mut manifest: Manifest = serde_json::from_str(&json_string.to_owned())
         .map_err(|err| Error::FailedManifestHydration(Box::new(FailedManifestHydration {
             message: format!("We failed to parse the PnP data payload as proper JSON; Did you manually edit the file?\n\nOriginal error: {err}"),
-            manifest_path: p.as_ref().to_path_buf(),
+            manifest_path: p.to_path_buf(),
         })))?;
 
-    init_pnp_manifest(&mut manifest, p.as_ref());
+    init_pnp_manifest(&mut manifest, p);
 
     Ok(manifest)
 }
 
-pub fn init_pnp_manifest<P: AsRef<Path>>(manifest: &mut Manifest, p: P) {
-    manifest.manifest_path = p.as_ref().to_path_buf();
+pub fn init_pnp_manifest(manifest: &mut Manifest, p: &Path) {
+    manifest.manifest_path = p.to_path_buf();
 
-    manifest.manifest_dir = p.as_ref().parent().expect("Should have a parent directory").to_owned();
+    manifest.manifest_dir = p.parent().expect("Should have a parent directory").to_owned();
 
     for (name, ranges) in manifest.package_registry_data.iter_mut() {
         for (reference, info) in ranges.iter_mut() {
@@ -187,17 +187,14 @@ pub fn init_pnp_manifest<P: AsRef<Path>>(manifest: &mut Manifest, p: P) {
 }
 
 pub fn find_pnp_manifest(parent: &Path) -> Result<Option<Manifest>, Error> {
-    find_closest_pnp_manifest_path(parent).map_or(Ok(None), |p| Ok(Some(load_pnp_manifest(p)?)))
+    find_closest_pnp_manifest_path(parent).map_or(Ok(None), |p| Ok(Some(load_pnp_manifest(&p)?)))
 }
 
 pub fn is_dependency_tree_root<'a>(manifest: &'a Manifest, locator: &'a PackageLocator) -> bool {
     manifest.dependency_tree_roots.contains(locator)
 }
 
-pub fn find_locator<'a, P: AsRef<Path>>(
-    manifest: &'a Manifest,
-    path: &P,
-) -> Option<&'a PackageLocator> {
+pub fn find_locator<'a>(manifest: &'a Manifest, path: &Path) -> Option<&'a PackageLocator> {
     let rel_path = pathdiff::diff_paths(path, &manifest.manifest_dir)
         .expect("Assertion failed: Provided path should be absolute");
 
@@ -240,14 +237,14 @@ pub fn find_broken_peer_dependencies(
     [].to_vec()
 }
 
-pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
+pub fn resolve_to_unqualified_via_manifest(
     manifest: &Manifest,
     specifier: &str,
-    parent: P,
+    parent: &Path,
 ) -> Result<Resolution, Error> {
     let (ident, module_path) = parse_bare_identifier(specifier)?;
 
-    if let Some(parent_locator) = find_locator(manifest, &parent) {
+    if let Some(parent_locator) = find_locator(manifest, parent) {
         let parent_pkg = get_package(manifest, parent_locator)?;
 
         let mut reference_or_alias: Option<PackageDependency> = None;
@@ -281,7 +278,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                         } else {
                             String::from("")
                         },
-                        issuer_path = parent.as_ref().to_string_lossy(),
+                        issuer_path = parent.to_string_lossy(),
                     )
                 } else {
                     format!(
@@ -293,7 +290,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                         } else {
                             String::from("")
                         },
-                        issuer_path = parent.as_ref().to_string_lossy(),
+                        issuer_path = parent.to_string_lossy(),
                     )
                 }
             } else if is_dependency_tree_root(manifest, parent_locator) {
@@ -305,7 +302,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                     } else {
                         String::from("")
                     },
-                    issuer_path = parent.as_ref().to_string_lossy(),
+                    issuer_path = parent.to_string_lossy(),
                 )
             } else {
                 format!(
@@ -318,7 +315,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                     } else {
                         String::from("")
                     },
-                    issuer_path = parent.as_ref().to_string_lossy(),
+                    issuer_path = parent.to_string_lossy(),
                 )
             };
 
@@ -327,7 +324,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                 request: specifier.to_string(),
                 dependency_name: ident,
                 issuer_locator: parent_locator.clone(),
-                issuer_path: parent.as_ref().to_path_buf(),
+                issuer_path: parent.to_path_buf(),
             })));
         }
 
@@ -354,7 +351,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                     } else {
                         String::from("")
                     },
-                    issuer_path = parent.as_ref().to_string_lossy(),
+                    issuer_path = parent.to_string_lossy(),
                 )
             } else if !broken_ancestors.is_empty()
                 && broken_ancestors.iter().all(|locator| is_dependency_tree_root(manifest, locator))
@@ -369,7 +366,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                     } else {
                         String::from("")
                     },
-                    issuer_path = parent.as_ref().to_string_lossy(),
+                    issuer_path = parent.to_string_lossy(),
                 )
             } else {
                 format!(
@@ -382,7 +379,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                     } else {
                         String::from("")
                     },
-                    issuer_path = parent.as_ref().to_string_lossy(),
+                    issuer_path = parent.to_string_lossy(),
                 )
             };
 
@@ -391,7 +388,7 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
                 request: specifier.to_string(),
                 dependency_name: ident,
                 issuer_locator: parent_locator.clone(),
-                issuer_path: parent.as_ref().to_path_buf(),
+                issuer_path: parent.to_path_buf(),
                 broken_ancestors: [].to_vec(),
             })))
         }
@@ -400,13 +397,13 @@ pub fn resolve_to_unqualified_via_manifest<P: AsRef<Path>>(
     }
 }
 
-pub fn resolve_to_unqualified<P: AsRef<Path>>(
+pub fn resolve_to_unqualified(
     specifier: &str,
-    parent: P,
+    parent: &Path,
     config: &ResolutionConfig,
 ) -> Result<Resolution, Error> {
-    if let Some(manifest) = (config.host.find_pnp_manifest)(parent.as_ref())? {
-        resolve_to_unqualified_via_manifest(&manifest, specifier, &parent)
+    if let Some(manifest) = (config.host.find_pnp_manifest)(parent)? {
+        resolve_to_unqualified_via_manifest(&manifest, specifier, parent)
     } else {
         Ok(Resolution::Skipped)
     }
