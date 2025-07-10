@@ -6,6 +6,8 @@ on:
 jobs:
   bench:
     runs-on: ubuntu-latest
+    permissions: 
+      pull-requests: write
     steps:
       - uses: taiki-e/checkout-action@v1
 

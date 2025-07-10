@@ -301,10 +301,7 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
             base_path.insert(0, '/');
         }
 
-        return Ok(VPath::Virtual(VirtualInfo {
-            base_path,
-            virtual_segments,
-        }));
+        return Ok(VPath::Virtual(VirtualInfo { base_path, virtual_segments }));
     }
 
     Ok(VPath::Native(PathBuf::from(normalized_path)))
