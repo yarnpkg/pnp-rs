@@ -26,6 +26,11 @@ thiserror = "2"
 
 [dev-dependencies]
 rstest = "0.25.0"
+criterion = "0.5"
+
+[[bench]]
+name = "vpath_bench"
+harness = false
 
 [features]
 mmap = ["dep:mmap-rs"]
