@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1](https://github.com/yarnpkg/pnp-rs/compare/v0.12.0...v0.12.1) - 2025-07-10
+
+### Other
+
+- add renovate bot ([#39](https://github.com/yarnpkg/pnp-rs/pull/39))
+- Improves performances ([#42](https://github.com/yarnpkg/pnp-rs/pull/42))
+- Adds a benchmark workflow ([#40](https://github.com/yarnpkg/pnp-rs/pull/40))
+
 ## [0.12.0](https://github.com/yarnpkg/pnp-rs/compare/v0.11.0...v0.12.0) - 2025-07-10
 
 ### Other
