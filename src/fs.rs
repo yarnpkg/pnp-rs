@@ -210,7 +210,7 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
         segment_it.next();
     }
 
-    let mut base_items: Vec<&str> = Vec::new();
+    let mut base_items: Vec<&str> = Vec::with_capacity(10);
 
     let mut virtual_items: Option<Vec<&str>> = None;
     let mut internal_items: Option<Vec<&str>> = None;
@@ -248,13 +248,13 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
             }
 
             virtual_items = Some(acc_segments);
-            internal_items = Some(vec![]);
+            internal_items = Some(Vec::with_capacity(10));
 
             continue;
         }
 
         if segment.len() > 4 && segment.ends_with(".zip") {
-            zip_items = Some(vec![]);
+            zip_items = Some(Vec::with_capacity(10));
         }
 
         if let Some(virtual_segments) = &mut virtual_items {
@@ -268,14 +268,7 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
         }
     }
 
-    let mut base_path = base_items.join("/");
-
-    // Don't forget to add back the leading slash we removed earlier
-    if normalized_relative_path != normalized_path {
-        base_path.insert(0, '/');
-    }
-
-    let virtual_info = match (virtual_items, internal_items) {
+    let virtual_segments = match (virtual_items, internal_items) {
         (Some(virtual_segments), Some(internal_segments)) => {
             Some((virtual_segments.join("/"), internal_segments.join("/")))
         }
@@ -284,20 +277,34 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
     };
 
     if let Some(zip_segments) = zip_items {
+        let mut base_path = base_items.join("/");
+
+        // Don't forget to add back the leading slash we removed earlier
+        if normalized_relative_path != normalized_path {
+            base_path.insert(0, '/');
+        }
+
         if !zip_segments.is_empty() {
             return Ok(VPath::Zip(ZipInfo {
                 base_path,
-                virtual_segments: virtual_info,
+                virtual_segments,
                 zip_path: zip_segments.join("/"),
             }));
         }
     }
 
-    if let Some(virtual_info) = virtual_info {
-        return Ok(VPath::Virtual(VirtualInfo { base_path, virtual_segments: virtual_info }));
+    if let Some(virtual_segments) = virtual_segments {
+        let mut base_path = base_items.join("/");
+
+        // Don't forget to add back the leading slash we removed earlier
+        if normalized_relative_path != normalized_path {
+            base_path.insert(0, '/');
+        }
+
+        return Ok(VPath::Virtual(VirtualInfo { base_path, virtual_segments }));
     }
 
-    Ok(VPath::Native(PathBuf::from(base_path)))
+    Ok(VPath::Native(PathBuf::from(normalized_path)))
 }
 
 #[cfg(test)]
