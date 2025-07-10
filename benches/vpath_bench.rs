@@ -1,7 +1,7 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use pnp::fs::VPath;
 use std::path::Path;
 use std::time::Duration;
-use pnp::fs::VPath;
 
 fn bench_vpath_native(c: &mut Criterion) {
     let paths = vec![
