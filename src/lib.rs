@@ -195,8 +195,9 @@ pub fn is_dependency_tree_root<'a>(manifest: &'a Manifest, locator: &'a PackageL
 }
 
 pub fn find_locator<'a>(manifest: &'a Manifest, path: &Path) -> Option<&'a PackageLocator> {
-    let rel_path = pathdiff::diff_paths(path, &manifest.manifest_dir)
-        .expect("Assertion failed: Provided path should be absolute");
+    let rel_path = pathdiff::diff_paths(path, &manifest.manifest_dir).unwrap_or_else(|| {
+        panic!("Assertion failed: Provided path should be absolute but received {}", path.display())
+    });
 
     if let Some(regex) = &manifest.ignore_pattern_data {
         if regex.0.is_match(&util::normalize_path(rel_path.to_string_lossy())).unwrap() {
