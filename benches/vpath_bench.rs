@@ -1,5 +1,6 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use pnp::fs::VPath;
+use std::hint::black_box;
 use std::path::Path;
 use std::time::Duration;
 
