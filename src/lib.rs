@@ -153,7 +153,10 @@ pub fn load_pnp_manifest(p: &Path) -> Result<Manifest, Error> {
 pub fn init_pnp_manifest(manifest: &mut Manifest, p: &Path) {
     manifest.manifest_path = p.to_path_buf();
 
-    manifest.manifest_dir = p.parent().expect("Should have a parent directory").to_owned();
+    manifest.manifest_dir = p
+        .parent()
+        .unwrap_or_else(|| panic!("Should have a parent directory for path {}", p.display()))
+        .to_owned();
 
     for (name, ranges) in manifest.package_registry_data.iter_mut() {
         for (reference, info) in ranges.iter_mut() {
@@ -212,13 +215,13 @@ pub fn get_package<'a>(
     manifest: &'a Manifest,
     locator: &PackageLocator,
 ) -> Result<&'a PackageInformation, Error> {
-    let references = manifest
-        .package_registry_data
-        .get(&locator.name)
-        .expect("Should have an entry in the package registry");
+    let references = manifest.package_registry_data.get(&locator.name).unwrap_or_else(|| {
+        panic!("Should have an entry in the package registry for {}", locator.name)
+    });
 
-    let info =
-        references.get(&locator.reference).expect("Should have an entry in the package registry");
+    let info = references.get(&locator.reference).unwrap_or_else(|| {
+        panic!("Should have an entry in the package registry for {}", locator.reference)
+    });
 
     Ok(info)
 }
