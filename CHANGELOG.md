@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2](https://github.com/yarnpkg/pnp-rs/compare/v0.12.1...v0.12.2) - 2025-08-25
+
+### Other
+
+- *(deps)* lock file maintenance rust crates ([#45](https://github.com/yarnpkg/pnp-rs/pull/45))
+- add recived path into panic info ([#46](https://github.com/yarnpkg/pnp-rs/pull/46))
+- *(deps)* update dependency rust to v1.89.0 ([#43](https://github.com/yarnpkg/pnp-rs/pull/43))
+
 ## [0.12.1](https://github.com/yarnpkg/pnp-rs/compare/v0.12.0...v0.12.1) - 2025-07-10
 
 ### Other
