@@ -1,8 +1,7 @@
 use fancy_regex::Regex;
 use serde::{Deserialize, Deserializer, de::Error};
-use std::{borrow::Cow, path::Component};
+use std::borrow::Cow;
 
-use path_slash::PathBufExt;
 use std::path::{MAIN_SEPARATOR_STR, Path, PathBuf};
 
 #[derive(Debug, Default, Clone)]
@@ -33,35 +32,61 @@ impl<T> Trie<T> {
     }
 }
 
-fn clean_path(path: PathBuf) -> PathBuf {
-    let mut out = Vec::new();
+pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
+    let original_str
+        = original.as_ref();
 
-    for comp in path.components() {
-        println!("Component: {:?}", comp);
+    let check_str_root
+        = original_str.strip_prefix("/");
+    let str_minus_root
+        = check_str_root.unwrap_or(original_str);
+
+    let components
+        = str_minus_root.split(&['/', '\\'][..]);
+
+    let mut out: Vec<&str>
+        = Vec::new();
+
+    for comp in components {
         match comp {
-            Component::CurDir => (),
-            Component::ParentDir => match out.last() {
-                Some(Component::RootDir) => (),
-                Some(Component::Normal(_)) => {
-                    out.pop();
-                }
-                None
-                | Some(Component::CurDir)
-                | Some(Component::ParentDir)
-                | Some(Component::Prefix(_)) => out.push(comp),
+            "" | "." => {
+                // Those components don't progress the path
             },
-            comp => out.push(comp),
+
+            ".." => match out.last() {
+                None if check_str_root.is_some() => {
+                    // No need to add a ".." since we're already at the root
+                },
+
+                Some(&"..") | None => {
+                    out.push(comp);
+                },
+
+                Some(_) => {
+                    out.pop();
+                },
+            },
+
+            comp => {
+                out.push(comp)
+            },
         }
     }
 
-    if !out.is_empty() { out.iter().collect() } else { PathBuf::from(".") }
-}
+    if check_str_root.is_some() {
+        if out.is_empty() {
+            return "/".to_string();
+        } else {
+            out.insert(0, "");
+        }
+    }
 
-pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
-    let original_str = original.as_ref();
+    let mut str
+        = out.join("/");
 
-    let p = PathBuf::from(original_str);
-    let mut str = clean_path(p).to_slash_lossy().to_string();
+    if out.is_empty() {
+        return ".".to_string();
+    }
 
     if (original_str.ends_with('/') || original_str.ends_with(MAIN_SEPARATOR_STR))
         && !str.ends_with('/')
@@ -85,12 +110,17 @@ mod tests {
         assert_eq!(normalize_path("foo//bar"), "foo/bar");
         assert_eq!(normalize_path("foo/./bar"), "foo/bar");
         assert_eq!(normalize_path("foo/../bar"), "bar");
+        assert_eq!(normalize_path("foo/..//bar"), "bar");
         assert_eq!(normalize_path("foo/bar/.."), "foo");
         assert_eq!(normalize_path("foo/../../bar"), "../bar");
         assert_eq!(normalize_path("../foo/../../bar"), "../../bar");
         assert_eq!(normalize_path("./foo"), "foo");
         assert_eq!(normalize_path("../foo"), "../foo");
+        assert_eq!(normalize_path("../D:/foo"), "../D:/foo");
         assert_eq!(normalize_path("/foo/bar"), "/foo/bar");
+        assert_eq!(normalize_path("/../foo/bar"), "/foo/bar");
+        assert_eq!(normalize_path("/foo/../../bar/baz"), "/bar/baz");
+        assert_eq!(normalize_path("/../foo/bar"), "/foo/bar");
         assert_eq!(normalize_path("/foo/bar/"), "/foo/bar/");
     }
 }

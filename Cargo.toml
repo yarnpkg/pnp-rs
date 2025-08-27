@@ -13,7 +13,6 @@ concurrent_lru = "^0.2"
 fancy-regex = { version = "^0.16.0", default-features = false, features = ["std"] }
 miniz_oxide = "^0.8"
 mmap-rs = { version = "^0.6", optional = true }
-path-slash = "0.2.1"
 pathdiff = "^0.2"
 radix_trie = "0.2.1"
 serde = { version = "1", features = ["derive"] }
