@@ -86,9 +86,6 @@ pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
         str.push('/');
     }
 
-    println!("{}", original_str);
-    println!("-> {}", str);
-
     str
 }
 
