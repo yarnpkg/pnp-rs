@@ -212,7 +212,5 @@ mod tests {
                 panic!("Unexpected resolve failed");
             }
         }
-
-        panic!("test");
     }
 }

@@ -110,9 +110,9 @@ mod tests {
         assert_eq!(normalize_path("../foo"), "../foo");
         assert_eq!(normalize_path("../D:/foo"), "../D:/foo");
         assert_eq!(normalize_path("/foo/bar"), "/foo/bar");
-        assert_eq!(normalize_path("/../foo/bar"), "/foo/bar");
         assert_eq!(normalize_path("/foo/../../bar/baz"), "/bar/baz");
         assert_eq!(normalize_path("/../foo/bar"), "/foo/bar");
+        assert_eq!(normalize_path("/../foo/bar//"), "/foo/bar/");
         assert_eq!(normalize_path("/foo/bar/"), "/foo/bar/");
     }
 }
