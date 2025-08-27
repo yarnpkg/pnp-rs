@@ -161,7 +161,6 @@ pub fn init_pnp_manifest(manifest: &mut Manifest, p: &Path) {
     for (name, ranges) in manifest.package_registry_data.iter_mut() {
         for (reference, info) in ranges.iter_mut() {
             let package_location = manifest.manifest_dir.join(info.package_location.clone());
-
             let normalized_location = util::normalize_path(package_location.to_string_lossy());
 
             info.package_location = PathBuf::from(normalized_location);
@@ -207,6 +206,8 @@ pub fn find_locator<'a>(manifest: &'a Manifest, path: &Path) -> Option<&'a Packa
             return None;
         }
     }
+
+    let path = util::normalize_path(path.to_string_lossy());
 
     manifest.location_trie.get_ancestor_value(&path)
 }
