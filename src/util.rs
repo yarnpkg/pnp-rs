@@ -33,43 +33,36 @@ impl<T> Trie<T> {
 }
 
 pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
-    let original_str
-        = original.as_ref();
+    let original_str = original.as_ref();
 
-    let check_str_root
-        = original_str.strip_prefix("/");
-    let str_minus_root
-        = check_str_root.unwrap_or(original_str);
+    let check_str_root = original_str.strip_prefix("/");
+    let str_minus_root = check_str_root.unwrap_or(original_str);
 
-    let components
-        = str_minus_root.split(&['/', '\\'][..]);
+    let components = str_minus_root.split(&['/', '\\'][..]);
 
-    let mut out: Vec<&str>
-        = Vec::new();
+    let mut out: Vec<&str> = Vec::new();
 
     for comp in components {
         match comp {
             "" | "." => {
                 // Those components don't progress the path
-            },
+            }
 
             ".." => match out.last() {
                 None if check_str_root.is_some() => {
                     // No need to add a ".." since we're already at the root
-                },
+                }
 
                 Some(&"..") | None => {
                     out.push(comp);
-                },
+                }
 
                 Some(_) => {
                     out.pop();
-                },
+                }
             },
 
-            comp => {
-                out.push(comp)
-            },
+            comp => out.push(comp),
         }
     }
 
@@ -81,8 +74,7 @@ pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
         }
     }
 
-    let mut str
-        = out.join("/");
+    let mut str = out.join("/");
 
     if out.is_empty() {
         return ".".to_string();
@@ -93,6 +85,9 @@ pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
     {
         str.push('/');
     }
+
+    println!("{}", original_str);
+    println!("-> {}", str);
 
     str
 }
