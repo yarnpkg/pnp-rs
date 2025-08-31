@@ -1,6 +1,6 @@
 [package]
 name = "pnp"
-version = "0.12.2"
+version = "0.12.3"
 edition = "2021"
 license = "BSD-2-Clause"
 description = "Resolution primitives for Yarn PnP"
