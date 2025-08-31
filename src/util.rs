@@ -2,8 +2,7 @@ use fancy_regex::Regex;
 use serde::{Deserialize, Deserializer, de::Error};
 use std::borrow::Cow;
 
-use path_slash::PathBufExt;
-use std::path::{Path, PathBuf};
+use std::path::{MAIN_SEPARATOR_STR, Path, PathBuf};
 
 #[derive(Debug, Default, Clone)]
 pub struct Trie<T> {
@@ -36,10 +35,54 @@ impl<T> Trie<T> {
 pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
     let original_str = original.as_ref();
 
-    let p = PathBuf::from(original_str);
-    let mut str = clean_path::clean(p).to_slash_lossy().to_string();
+    let check_str_root = original_str.strip_prefix("/");
+    let str_minus_root = check_str_root.unwrap_or(original_str);
 
-    if original_str.ends_with('/') && !str.ends_with('/') {
+    let components = str_minus_root.split(&['/', '\\'][..]);
+
+    let mut out: Vec<&str> = Vec::new();
+
+    for comp in components {
+        match comp {
+            "" | "." => {
+                // Those components don't progress the path
+            }
+
+            ".." => match out.last() {
+                None if check_str_root.is_some() => {
+                    // No need to add a ".." since we're already at the root
+                }
+
+                Some(&"..") | None => {
+                    out.push(comp);
+                }
+
+                Some(_) => {
+                    out.pop();
+                }
+            },
+
+            comp => out.push(comp),
+        }
+    }
+
+    if check_str_root.is_some() {
+        if out.is_empty() {
+            return "/".to_string();
+        } else {
+            out.insert(0, "");
+        }
+    }
+
+    let mut str = out.join("/");
+
+    if out.is_empty() {
+        return ".".to_string();
+    }
+
+    if (original_str.ends_with('/') || original_str.ends_with(MAIN_SEPARATOR_STR))
+        && !str.ends_with('/')
+    {
         str.push('/');
     }
 
@@ -59,12 +102,17 @@ mod tests {
         assert_eq!(normalize_path("foo//bar"), "foo/bar");
         assert_eq!(normalize_path("foo/./bar"), "foo/bar");
         assert_eq!(normalize_path("foo/../bar"), "bar");
+        assert_eq!(normalize_path("foo/..//bar"), "bar");
         assert_eq!(normalize_path("foo/bar/.."), "foo");
         assert_eq!(normalize_path("foo/../../bar"), "../bar");
         assert_eq!(normalize_path("../foo/../../bar"), "../../bar");
         assert_eq!(normalize_path("./foo"), "foo");
         assert_eq!(normalize_path("../foo"), "../foo");
+        assert_eq!(normalize_path("../D:/foo"), "../D:/foo");
         assert_eq!(normalize_path("/foo/bar"), "/foo/bar");
+        assert_eq!(normalize_path("/foo/../../bar/baz"), "/bar/baz");
+        assert_eq!(normalize_path("/../foo/bar"), "/foo/bar");
+        assert_eq!(normalize_path("/../foo/bar//"), "/foo/bar/");
         assert_eq!(normalize_path("/foo/bar/"), "/foo/bar/");
     }
 }
