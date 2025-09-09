@@ -43,7 +43,7 @@ where
             let name = util::normalize_path(name);
             let segments: Vec<&str> = name.split('/').collect();
 
-            for t in 1..segments.len() - 1 {
+            for t in 1..segments.len() {
                 let dir = segments[0..t].to_vec().join("/");
                 zip.dirs.insert(dir + "/");
             }
@@ -200,4 +200,47 @@ fn read_central_file_header(
     };
 
     Ok(Some((file_name, Some(entry))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_read_zip_entry() {
+        let zip
+            = Zip::new(include_bytes!("../fixtures/left-pad-1.zip")).unwrap();
+
+        let mut dirs
+            = zip.dirs.iter()
+                .map(|d| d.as_str())
+                .collect::<Vec<&str>>();
+
+        dirs.sort();
+
+        assert_eq!(dirs, vec![
+            "node_modules/",
+            "node_modules/left-pad/",
+            "node_modules/left-pad/perf/",
+        ]);
+    }
+
+    #[test]
+    fn test_read_zip_entry_2() {
+        let zip
+            = Zip::new(include_bytes!("../fixtures/left-pad-2.zip")).unwrap();
+
+        let mut dirs
+            = zip.dirs.iter()
+                .map(|d| d.as_str())
+                .collect::<Vec<&str>>();
+
+        dirs.sort();
+
+        assert_eq!(dirs, vec![
+            "node_modules/",
+            "node_modules/left-pad/",
+            "node_modules/left-pad/perf/",
+        ]);
+    }
 }
