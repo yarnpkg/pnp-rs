@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3](https://github.com/yarnpkg/pnp-rs/compare/v0.12.2...v0.12.3) - 2025-09-10
+
+### Other
+
+- add a new test case for global cache ([#10](https://github.com/yarnpkg/pnp-rs/pull/10))
+- Fixes implicit folder detection ([#50](https://github.com/yarnpkg/pnp-rs/pull/50))
+
 ## [0.12.2](https://github.com/yarnpkg/pnp-rs/compare/v0.12.1...v0.12.2) - 2025-08-25
 
 ### Other
