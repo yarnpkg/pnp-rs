@@ -3,6 +3,8 @@ use serde::{Deserialize, Deserializer, de::Error};
 use std::borrow::Cow;
 
 use std::path::{MAIN_SEPARATOR_STR, Path, PathBuf};
+#[cfg(windows)]
+use std::sync::LazyLock;
 
 #[derive(Debug, Default, Clone)]
 pub struct Trie<T> {
@@ -32,11 +34,62 @@ impl<T> Trie<T> {
     }
 }
 
+#[cfg(windows)]
+static WINDOWS_PATH_REGEXP: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([a-zA-Z]:.*)$").unwrap());
+#[cfg(windows)]
+static UNC_WINDOWS_PATH_REGEXP: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[\/\\][\/\\](\.[\/\\])?(.*)$").unwrap());
+#[cfg(windows)]
+static PORTABLE_PATH_REGEXP: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\/([a-zA-Z]:.*)$").unwrap());
+#[cfg(windows)]
+static UNC_PORTABLE_PATH_REGEXP: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\/unc\/(\.dot\/)?(.*)$").unwrap());
+
+fn from_portable_path<'a>(str: &'a str) -> Cow<'a, str> {
+    #[cfg(windows)]
+    {
+        if let Ok(Some(caps)) = PORTABLE_PATH_REGEXP.captures(str) {
+            return Cow::Borrowed(caps.get(1).unwrap().as_str());
+        }
+
+        if let Ok(Some(caps)) = UNC_PORTABLE_PATH_REGEXP.captures(str) {
+            if caps.get(1).is_some() {
+                return Cow::Owned(format!("\\\\.\\{}", caps.get(2).unwrap().as_str()));
+            } else {
+                return Cow::Owned(format!("\\\\{}", caps.get(2).unwrap().as_str()));
+            }
+        }
+    }
+
+    Cow::Borrowed(str)
+}
+
+fn to_portable_path<'a>(str: &'a str) -> Cow<'a, str> {
+    #[cfg(windows)]
+    {
+        if let Ok(Some(caps)) = WINDOWS_PATH_REGEXP.captures(str) {
+            return Cow::Owned(format!("/{}", caps.get(1).unwrap().as_str()));
+        }
+
+        if let Ok(Some(caps)) = UNC_WINDOWS_PATH_REGEXP.captures(str) {
+            if caps.get(1).is_some() {
+                return Cow::Owned(format!("/unc/.dot/{}", caps.get(2).unwrap().as_str()));
+            } else {
+                return Cow::Owned(format!("/unc/{}", caps.get(2).unwrap().as_str()));
+            }
+        }
+    }
+
+    Cow::Borrowed(str)
+}
+
 pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
-    let original_str = original.as_ref();
+    let original_str = to_portable_path(original.as_ref());
 
     let check_str_root = original_str.strip_prefix("/");
-    let str_minus_root = check_str_root.unwrap_or(original_str);
+    let str_minus_root = check_str_root.unwrap_or(original_str.as_ref());
 
     let components = str_minus_root.split(&['/', '\\'][..]);
 
@@ -86,7 +139,7 @@ pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
         str.push('/');
     }
 
-    str
+    from_portable_path(&str).into_owned()
 }
 
 #[cfg(test)]
@@ -106,6 +159,7 @@ mod tests {
         assert_eq!(normalize_path("foo/bar/.."), "foo");
         assert_eq!(normalize_path("foo/../../bar"), "../bar");
         assert_eq!(normalize_path("../foo/../../bar"), "../../bar");
+        assert_eq!(normalize_path("foo/../../bar"), "../bar");
         assert_eq!(normalize_path("./foo"), "foo");
         assert_eq!(normalize_path("../foo"), "../foo");
         assert_eq!(normalize_path("../D:/foo"), "../D:/foo");
@@ -114,6 +168,18 @@ mod tests {
         assert_eq!(normalize_path("/../foo/bar"), "/foo/bar");
         assert_eq!(normalize_path("/../foo/bar//"), "/foo/bar/");
         assert_eq!(normalize_path("/foo/bar/"), "/foo/bar/");
+
+        #[cfg(windows)]
+        assert_eq!(normalize_path("D:\\foo\\..\\bar"), "D:/bar");
+        #[cfg(windows)]
+        assert_eq!(normalize_path("D:\\foo\\..\\..\\C:\\bar\\test"), "C:/bar/test");
+        #[cfg(windows)]
+        assert_eq!(normalize_path("\\\\server-name\\foo\\..\\bar"), "\\\\server-name/bar");
+        #[cfg(windows)]
+        assert_eq!(
+            normalize_path("\\\\server-name\\foo\\..\\..\\..\\C:\\bar\\test"),
+            "C:/bar/test"
+        );
     }
 }
 
