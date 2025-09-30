@@ -10,7 +10,7 @@ repository = "https://github.com/yarnpkg/pnp-rs"
 [dependencies]
 byteorder = "1"
 concurrent_lru = "^0.2"
-fancy-regex = { version = "^0.16.0", default-features = false, features = ["std"] }
+fancy-regex = { version = "^0.16.2", default-features = false, features = ["std"] }
 miniz_oxide = "^0.8"
 mmap-rs = { version = "^0.7.0", optional = true }
 pathdiff = "^0.2"
@@ -22,7 +22,7 @@ rustc-hash = "2"
 dirs = "6.0.0"
 
 [dev-dependencies]
-rstest = "0.26.0"
+rstest = "0.26.1"
 criterion = "0.7"
 
 [lib]
