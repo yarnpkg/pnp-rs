@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.4](https://github.com/yarnpkg/pnp-rs/compare/v0.12.3...v0.12.4) - 2025-09-30
+
+### Other
+
+- *(deps)* lock file maintenance rust crates ([#58](https://github.com/yarnpkg/pnp-rs/pull/58))
+- *(deps)* lock file maintenance npm packages ([#57](https://github.com/yarnpkg/pnp-rs/pull/57))
+- *(deps)* lock file maintenance rust crates ([#56](https://github.com/yarnpkg/pnp-rs/pull/56))
+- *(deps)* lock file maintenance npm packages ([#55](https://github.com/yarnpkg/pnp-rs/pull/55))
+- *(deps)* update dependency rust to v1.90.0 ([#54](https://github.com/yarnpkg/pnp-rs/pull/54))
+- *(deps)* lock file maintenance rust crates ([#52](https://github.com/yarnpkg/pnp-rs/pull/52))
+- *(deps)* lock file maintenance npm packages ([#51](https://github.com/yarnpkg/pnp-rs/pull/51))
+
 ## [0.12.3](https://github.com/yarnpkg/pnp-rs/compare/v0.12.2...v0.12.3) - 2025-09-10
 
 ### Other
