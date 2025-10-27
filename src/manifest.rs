@@ -119,10 +119,9 @@ where
 
     let mut map = FxHashMap::default();
     for item in Vec::<Item>::deserialize(deserializer)? {
-        let key = item.0.unwrap_or_else(|| "".to_string());
-        let value = FxHashMap::from_iter(
-            item.1.into_iter().map(|(k, v)| (k.unwrap_or_else(|| "".to_string()), v)),
-        );
+        let key = item.0.unwrap_or_default();
+        let value =
+            FxHashMap::from_iter(item.1.into_iter().map(|(k, v)| (k.unwrap_or_default(), v)));
         map.insert(key, value);
     }
     Ok(map)

@@ -88,7 +88,7 @@ fn to_portable_path<'a>(str: &'a str) -> Cow<'a, str> {
 pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
     let original_str = to_portable_path(original.as_ref());
 
-    let check_str_root = original_str.strip_prefix("/");
+    let check_str_root = original_str.strip_prefix('/');
     let str_minus_root = check_str_root.unwrap_or(original_str.as_ref());
 
     let components = str_minus_root.split(&['/', '\\'][..]);

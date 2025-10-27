@@ -14,11 +14,7 @@ fn main() {
     println!("specifier = {specifier}");
     println!("parent    = {parent:?}");
 
-    let resolution = pnp::resolve_to_unqualified(
-        &specifier,
-        &parent,
-        &ResolutionConfig { ..Default::default() },
-    );
+    let resolution = pnp::resolve_to_unqualified(&specifier, &parent, &ResolutionConfig::default());
 
     match resolution {
         Ok(res) => match res {
