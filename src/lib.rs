@@ -71,9 +71,10 @@ fn parse_global_package_name(specifier: &str) -> Option<(String, Option<String>)
 }
 
 pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>), Error> {
-    let name = match specifier.starts_with("@") {
-        true => parse_scoped_package_name(specifier),
-        false => parse_global_package_name(specifier),
+    let name = if specifier.starts_with('@') {
+        parse_scoped_package_name(specifier)
+    } else {
+        parse_global_package_name(specifier)
     };
 
     name.ok_or_else(|| {
@@ -139,7 +140,7 @@ pub fn load_pnp_manifest(p: &Path) -> Result<Manifest, Error> {
         }
     }
 
-    let mut manifest: Manifest = serde_json::from_str(&json_string.to_owned())
+    let mut manifest: Manifest = serde_json::from_str(&json_string)
         .map_err(|err| Error::FailedManifestHydration(Box::new(FailedManifestHydration {
             message: format!("We failed to parse the PnP data payload as proper JSON; Did you manually edit the file?\n\nOriginal error: {err}"),
             manifest_path: p.to_path_buf(),
@@ -228,18 +229,17 @@ pub fn get_package<'a>(
 }
 
 pub fn is_excluded_from_fallback(manifest: &Manifest, locator: &PackageLocator) -> bool {
-    if let Some(references) = manifest.fallback_exclusion_list.get(&locator.name) {
-        references.contains(&locator.reference)
-    } else {
-        false
-    }
+    manifest
+        .fallback_exclusion_list
+        .get(&locator.name)
+        .is_some_and(|references| references.contains(&locator.reference))
 }
 
 pub fn find_broken_peer_dependencies(
     _dependency: &str,
     _initial_package: &PackageLocator,
 ) -> Vec<PackageLocator> {
-    [].to_vec()
+    Vec::new()
 }
 
 pub fn resolve_to_unqualified_via_manifest(
@@ -279,9 +279,9 @@ pub fn resolve_to_unqualified_via_manifest(
                         "Your application tried to access {dependency_name}. While this module is usually interpreted as a Node builtin, your resolver is running inside a non-Node resolution context where such builtins are ignored. Since {dependency_name} isn't otherwise declared in your dependencies, this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: ${issuer_path}",
                         dependency_name = &ident,
                         via = if ident != specifier {
-                            format!(" (via \"{}\")", &specifier)
+                            format!(" (via \"{specifier}\")")
                         } else {
-                            String::from("")
+                            String::new()
                         },
                         issuer_path = parent.to_string_lossy(),
                     )
@@ -291,9 +291,9 @@ pub fn resolve_to_unqualified_via_manifest(
                         issuer_locator_name = &parent_locator.name,
                         dependency_name = &ident,
                         via = if ident != specifier {
-                            format!(" (via \"{}\")", &specifier)
+                            format!(" (via \"{specifier}\")")
                         } else {
-                            String::from("")
+                            String::new()
                         },
                         issuer_path = parent.to_string_lossy(),
                     )
@@ -394,7 +394,7 @@ pub fn resolve_to_unqualified_via_manifest(
                 dependency_name: ident,
                 issuer_locator: parent_locator.clone(),
                 issuer_path: parent.to_path_buf(),
-                broken_ancestors: [].to_vec(),
+                broken_ancestors: Vec::new(),
             })))
         }
     } else {
