@@ -175,7 +175,7 @@ mod tests {
         )
         .unwrap();
 
-        let home_dir = dirs::home_dir().unwrap();
+        let home_dir = dirs_next::home_dir().unwrap();
 
         #[cfg(windows)]
         let global_cache = home_dir.join("AppData\\Local\\Yarn\\Berry\\cache");

@@ -19,9 +19,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 rustc-hash = "2"
-dirs = "6.0.0"
 
 [dev-dependencies]
+dirs-next = "2.0.0"
 rstest = "0.26.1"
 criterion = "0.7"
 
