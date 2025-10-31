@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.5](https://github.com/yarnpkg/pnp-rs/compare/v0.12.4...v0.12.5) - 2025-10-31
+
+### Other
+
+- *(deps)* update dependency rust to v1.91.0 ([#69](https://github.com/yarnpkg/pnp-rs/pull/69))
+- clean up code ([#67](https://github.com/yarnpkg/pnp-rs/pull/67))
+- release-plz-action no longer requires CARGO_REGISTRY_TOKEN ([#66](https://github.com/yarnpkg/pnp-rs/pull/66))
+
 ## [0.12.4](https://github.com/yarnpkg/pnp-rs/compare/v0.12.3...v0.12.4) - 2025-10-27
 
 ### Other
