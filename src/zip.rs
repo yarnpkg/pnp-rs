@@ -4,6 +4,7 @@ use std::{
 };
 
 use byteorder::{LittleEndian, ReadBytesExt};
+use flate2::read::DeflateDecoder;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::fs::FileType;
@@ -80,8 +81,11 @@ where
 
         match entry.compression {
             Compression::Deflate => {
-                let decompressed_data = miniz_oxide::inflate::decompress_to_vec(slice)
-                    .map_err(|_| std::io::Error::other("Error during decompression"))?;
+                let mut decoder = DeflateDecoder::new(slice);
+                let mut decompressed_data = Vec::new();
+                decoder.read_to_end(&mut decompressed_data).map_err(|e| {
+                    std::io::Error::other(format!("Error during decompression: {e}"))
+                })?;
 
                 Ok(decompressed_data)
             }
