@@ -23,7 +23,7 @@ rustc-hash = "2"
 [dev-dependencies]
 dirs-next = "2.0.0"
 rstest = "0.26.1"
-criterion = "0.7"
+criterion = "0.8"
 
 [lib]
 bench = false
