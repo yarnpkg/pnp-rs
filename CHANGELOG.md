@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.6](https://github.com/yarnpkg/pnp-rs/compare/v0.12.5...v0.12.6) - 2025-12-01
+
+### Other
+
+- *(deps)* update yarn to v4.12.0 ([#77](https://github.com/yarnpkg/pnp-rs/pull/77))
+- *(deps)* update rust crate criterion to 0.8 ([#76](https://github.com/yarnpkg/pnp-rs/pull/76))
+- *(deps)* update dependency rust to v1.91.1 ([#75](https://github.com/yarnpkg/pnp-rs/pull/75))
+- *(deps)* lock file maintenance ([#73](https://github.com/yarnpkg/pnp-rs/pull/73))
+- *(deps)* update yarn to v4.11.0 ([#72](https://github.com/yarnpkg/pnp-rs/pull/72))
+
 ## [0.12.5](https://github.com/yarnpkg/pnp-rs/compare/v0.12.4...v0.12.5) - 2025-11-05
 
 ### Other
