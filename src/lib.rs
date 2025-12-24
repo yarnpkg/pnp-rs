@@ -1,6 +1,5 @@
 pub mod fs;
 
-mod builtins;
 mod error;
 mod manifest;
 mod util;
@@ -273,7 +272,7 @@ pub fn resolve_to_unqualified_via_manifest(
         }
 
         if !is_set {
-            let message = if builtins::is_nodejs_builtin(specifier) {
+            let message = if nodejs_built_in_modules::is_nodejs_builtin_module(specifier) {
                 if is_dependency_tree_root(manifest, parent_locator) {
                     format!(
                         "Your application tried to access {dependency_name}. While this module is usually interpreted as a Node builtin, your resolver is running inside a non-Node resolution context where such builtins are ignored. Since {dependency_name} isn't otherwise declared in your dependencies, this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: ${issuer_path}",
