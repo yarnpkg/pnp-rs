@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.7](https://github.com/yarnpkg/pnp-rs/compare/v0.12.6...v0.12.7) - 2025-12-26
+
+### Other
+
+- *(deps)* update rust crate nodejs-built-in-modules to v1 ([#82](https://github.com/yarnpkg/pnp-rs/pull/82))
+
 ## [0.12.6](https://github.com/yarnpkg/pnp-rs/compare/v0.12.5...v0.12.6) - 2025-12-24
 
 ### Added
