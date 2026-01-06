@@ -213,4 +213,38 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_preserve_package_registry_data_order() {
+        let base_path = std::env::current_dir().unwrap().join("data");
+        let manifest =
+            load_pnp_manifest(base_path.join("pnp-yarn-v4-registry-data-order.cjs").as_path())
+                .unwrap();
+
+        let result = resolve_to_unqualified_via_manifest(
+            &manifest,
+            "inner-package",
+            base_path.join(".yarn/unplugged/lib-virtual-35bde7b160/node_modules/lib").as_path(),
+        );
+
+        match result {
+            Ok(Resolution::Resolved(path, subpath)) => {
+                assert_eq!(
+                    path.to_string_lossy(),
+                    util::normalize_path(
+                        base_path
+                            .join("path")
+                            .join("to")
+                            .join("inner-package")
+                            .join("")
+                            .to_string_lossy()
+                    )
+                );
+                assert_eq!(subpath, None);
+            }
+            _ => {
+                panic!("Unexpected resolve failed");
+            }
+        }
+    }
 }
