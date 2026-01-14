@@ -3,10 +3,11 @@ use std::path::PathBuf;
 use indexmap::IndexMap;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
-pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 use serde::{Deserialize, de::Deserializer};
 
 use crate::util::{RegexDef, Trie};
+
+type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
