@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.8](https://github.com/yarnpkg/pnp-rs/compare/v0.12.7...v0.12.8) - 2026-01-14
+
+### Fixed
+
+- preserve order in `packageRegistryData` using `IndexMap` ([#86](https://github.com/yarnpkg/pnp-rs/pull/86))
+
+### Other
+
+- use fxhash for `IndexMap` in `packageRegistryData` ([#88](https://github.com/yarnpkg/pnp-rs/pull/88))
+
 ## [0.12.7](https://github.com/yarnpkg/pnp-rs/compare/v0.12.6...v0.12.7) - 2025-12-26
 
 ### Other
