@@ -1,10 +1,13 @@
 use std::path::PathBuf;
 
 use indexmap::IndexMap;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+
 use serde::{Deserialize, de::Deserializer};
 
 use crate::util::{RegexDef, Trie};
+
+type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,7 +52,7 @@ pub struct Manifest {
     //   }]
     // ]
     #[serde(deserialize_with = "deserialize_package_registry_data")]
-    pub package_registry_data: IndexMap<String, IndexMap<String, PackageInformation>>,
+    pub package_registry_data: FxIndexMap<String, FxIndexMap<String, PackageInformation>>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Deserialize)]
@@ -111,18 +114,18 @@ where
 
 fn deserialize_package_registry_data<'de, D>(
     deserializer: D,
-) -> Result<IndexMap<String, IndexMap<String, PackageInformation>>, D::Error>
+) -> Result<FxIndexMap<String, FxIndexMap<String, PackageInformation>>, D::Error>
 where
     D: Deserializer<'de>,
 {
     #[derive(Debug, Deserialize)]
     struct Item(Option<String>, Vec<(Option<String>, PackageInformation)>);
 
-    let mut map = IndexMap::default();
+    let mut map = FxIndexMap::default();
     for item in Vec::<Item>::deserialize(deserializer)? {
         let key = item.0.unwrap_or_default();
         let value =
-            IndexMap::from_iter(item.1.into_iter().map(|(k, v)| (k.unwrap_or_default(), v)));
+            FxIndexMap::from_iter(item.1.into_iter().map(|(k, v)| (k.unwrap_or_default(), v)));
         map.insert(key, value);
     }
     Ok(map)
