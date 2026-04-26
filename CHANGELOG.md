@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.9](https://github.com/yarnpkg/pnp-rs/compare/v0.12.8...v0.12.9) - 2026-04-26
+
+### Other
+
+- *(deps)* update rust crate fancy-regex to ^0.18.0 ([#103](https://github.com/yarnpkg/pnp-rs/pull/103))
+- *(deps)* update yarn to v4.14.1 ([#102](https://github.com/yarnpkg/pnp-rs/pull/102))
+- *(deps)* update yarn to v4.14.0 ([#101](https://github.com/yarnpkg/pnp-rs/pull/101))
+- *(deps)* update dependency rust to v1.95.0 ([#100](https://github.com/yarnpkg/pnp-rs/pull/100))
+- *(deps)* update rust crate indexmap to v2.14.0 ([#99](https://github.com/yarnpkg/pnp-rs/pull/99))
+- *(deps)* update rust crate indexmap to v2.13.1 ([#98](https://github.com/yarnpkg/pnp-rs/pull/98))
+- *(deps)* update rust crate rustc-hash to v2.1.2 ([#97](https://github.com/yarnpkg/pnp-rs/pull/97))
+- *(deps)* update dependency rust to v1.94.1 ([#96](https://github.com/yarnpkg/pnp-rs/pull/96))
+- *(deps)* update yarn to v4.13.0 ([#95](https://github.com/yarnpkg/pnp-rs/pull/95))
+- *(deps)* update dependency rust to v1.94.0 ([#94](https://github.com/yarnpkg/pnp-rs/pull/94))
+- *(deps)* update dependency rust to v1.93.1 ([#93](https://github.com/yarnpkg/pnp-rs/pull/93))
+- *(deps)* update rust crates ([#92](https://github.com/yarnpkg/pnp-rs/pull/92))
+- *(deps)* update dependency rust to v1.93.0 ([#91](https://github.com/yarnpkg/pnp-rs/pull/91))
+
 ## [0.12.8](https://github.com/yarnpkg/pnp-rs/compare/v0.12.7...v0.12.8) - 2026-01-14
 
 ### Fixed
