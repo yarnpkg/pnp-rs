@@ -608,7 +608,7 @@ dependencies = [
 
 [[package]]
 name = "pnp"
-version = "0.12.8"
+version = "0.12.9"
 dependencies = [
  "byteorder",
  "concurrent_lru",
