@@ -98,28 +98,25 @@ fn is_drive_prefix(_: &str) -> bool {
 pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
     let original_str = to_portable_path(original.as_ref());
 
-    let check_str_root = original_str.strip_prefix('/');
-    let str_minus_root = check_str_root.unwrap_or(original_str.as_ref());
+    let rooted = original_str.starts_with('/');
+    let body = original_str.strip_prefix('/').unwrap_or(&original_str);
 
-    let mut components = str_minus_root.split(['/', '\\']).peekable();
+    let mut components = body.split(['/', '\\']).peekable();
 
-    // Treat a leading drive prefix (`C:`, `D:`, …) as part of the root.
-    // Without this, `..` against the segments after the drive can pop the drive
-    // letter itself, producing a rootless path that downstream consumers
-    // misinterpret as drive-relative — see https://github.com/yarnpkg/pnp-rs/issues/9
-    let mut drive: Option<&str> = if check_str_root.is_some()
-        && components.peek().is_some_and(|c| is_drive_prefix(c))
-    {
-        components.next()
-    } else {
-        None
-    };
+    // A leading drive prefix (`C:`, `D:`, …) is treated as part of the root,
+    // so `..` overshoot can't pop the drive letter and leave a rootless path
+    // that downstream consumers misread as drive-relative. See #9.
+    let mut drive: Option<&str> =
+        if rooted && components.peek().is_some_and(|c| is_drive_prefix(c)) {
+            components.next()
+        } else {
+            None
+        };
 
     let mut out: Vec<&str> = Vec::new();
-
     for comp in components {
-        // A drive prefix appearing mid-path replaces the current root, mirroring
-        // Windows semantics where `D:\foo\..\..\C:\bar` resolves to `C:\bar`.
+        // A mid-path drive prefix replaces the current root, matching Windows
+        // semantics where `D:\foo\..\..\C:\bar` resolves to `C:\bar`.
         if drive.is_some() && is_drive_prefix(comp) {
             out.clear();
             drive = Some(comp);
@@ -127,58 +124,41 @@ pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
         }
 
         match comp {
-            "" | "." => {
-                // Those components don't progress the path
-            }
-
+            "" | "." => {}
             ".." => match out.last() {
-                None if check_str_root.is_some() => {
-                    // No need to add a ".." since we're already at the root
-                }
-
-                Some(&"..") | None => {
-                    out.push(comp);
-                }
-
+                None if rooted => { /* clamp at root */ }
+                Some(&"..") | None => out.push(comp),
                 Some(_) => {
                     out.pop();
                 }
             },
-
-            comp => out.push(comp),
+            c => out.push(c),
         }
     }
 
-    let mut str = String::new();
-    if check_str_root.is_some() {
-        str.push('/');
+    let mut result = String::new();
+    if rooted {
+        result.push('/');
     }
     if let Some(d) = drive {
-        str.push_str(d);
-        // The slash after the drive is part of the root, not a separator —
-        // `C:\..` is `C:\` (drive root), not `C:` (drive-relative).
-        str.push('/');
+        // Always emit the slash after the drive — `C:\..` is `C:\` (drive
+        // root), not `C:` (drive-relative).
+        result.push_str(d);
+        result.push('/');
     }
-    if !str.is_empty() && !str.ends_with('/') && !out.is_empty() {
-        str.push('/');
-    }
-    str.push_str(&out.join("/"));
+    result.push_str(&out.join("/"));
 
-    if str.is_empty() {
+    if result.is_empty() {
         return ".".to_string();
     }
 
-    if check_str_root.is_some() && out.is_empty() && drive.is_none() {
-        return "/".to_string();
-    }
-
     if (original_str.ends_with('/') || original_str.ends_with(MAIN_SEPARATOR_STR))
-        && !str.ends_with('/')
+        && !result.ends_with('/')
     {
-        str.push('/');
+        result.push('/');
     }
 
-    from_portable_path(&str).into_owned()
+    from_portable_path(&result).into_owned()
 }
 
 #[cfg(test)]
