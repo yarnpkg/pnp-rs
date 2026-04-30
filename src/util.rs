@@ -85,17 +85,47 @@ fn to_portable_path<'a>(str: &'a str) -> Cow<'a, str> {
     Cow::Borrowed(str)
 }
 
+#[cfg(windows)]
+fn is_drive_prefix(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
+}
+#[cfg(not(windows))]
+fn is_drive_prefix(_: &str) -> bool {
+    false
+}
+
 pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
     let original_str = to_portable_path(original.as_ref());
 
     let check_str_root = original_str.strip_prefix('/');
     let str_minus_root = check_str_root.unwrap_or(original_str.as_ref());
 
-    let components = str_minus_root.split(&['/', '\\'][..]);
+    let mut components = str_minus_root.split(['/', '\\']).peekable();
+
+    // Treat a leading drive prefix (`C:`, `D:`, …) as part of the root.
+    // Without this, `..` against the segments after the drive can pop the drive
+    // letter itself, producing a rootless path that downstream consumers
+    // misinterpret as drive-relative — see https://github.com/yarnpkg/pnp-rs/issues/9
+    let mut drive: Option<&str> = if check_str_root.is_some()
+        && components.peek().is_some_and(|c| is_drive_prefix(c))
+    {
+        components.next()
+    } else {
+        None
+    };
 
     let mut out: Vec<&str> = Vec::new();
 
     for comp in components {
+        // A drive prefix appearing mid-path replaces the current root, mirroring
+        // Windows semantics where `D:\foo\..\..\C:\bar` resolves to `C:\bar`.
+        if drive.is_some() && is_drive_prefix(comp) {
+            out.clear();
+            drive = Some(comp);
+            continue;
+        }
+
         match comp {
             "" | "." => {
                 // Those components don't progress the path
@@ -119,18 +149,27 @@ pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
         }
     }
 
+    let mut str = String::new();
     if check_str_root.is_some() {
-        if out.is_empty() {
-            return "/".to_string();
-        } else {
-            out.insert(0, "");
-        }
+        str.push('/');
+    }
+    if let Some(d) = drive {
+        str.push_str(d);
+        // The slash after the drive is part of the root, not a separator —
+        // `C:\..` is `C:\` (drive root), not `C:` (drive-relative).
+        str.push('/');
+    }
+    if !str.is_empty() && !str.ends_with('/') && !out.is_empty() {
+        str.push('/');
+    }
+    str.push_str(&out.join("/"));
+
+    if str.is_empty() {
+        return ".".to_string();
     }
 
-    let mut str = out.join("/");
-
-    if out.is_empty() {
-        return ".".to_string();
+    if check_str_root.is_some() && out.is_empty() && drive.is_none() {
+        return "/".to_string();
     }
 
     if (original_str.ends_with('/') || original_str.ends_with(MAIN_SEPARATOR_STR))
@@ -180,6 +219,20 @@ mod tests {
             normalize_path("\\\\server-name\\foo\\..\\..\\..\\C:\\bar\\test"),
             "C:/bar/test"
         );
+
+        // Drive root is the floor — `..` past it must clamp, not consume the drive.
+        // Repro for https://github.com/yarnpkg/pnp-rs/issues/9 (same-drive overshoot).
+        #[cfg(windows)]
+        assert_eq!(
+            normalize_path("C:\\dev\\project\\..\\..\\..\\Users\\USERNAME\\foo"),
+            "C:/Users/USERNAME/foo"
+        );
+        #[cfg(windows)]
+        assert_eq!(normalize_path("C:\\.."), "C:/");
+        #[cfg(windows)]
+        assert_eq!(normalize_path("C:\\foo\\..\\..\\.."), "C:/");
+        #[cfg(windows)]
+        assert_eq!(normalize_path("C:/dev/project/../../Users/USERNAME"), "C:/Users/USERNAME");
     }
 }
 
