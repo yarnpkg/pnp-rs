@@ -106,12 +106,12 @@ pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
     // A leading drive prefix (`C:`, `D:`, …) is treated as part of the root,
     // so `..` overshoot can't pop the drive letter and leave a rootless path
     // that downstream consumers misread as drive-relative. See #9.
-    let mut drive: Option<&str> =
-        if rooted && components.peek().is_some_and(|c| is_drive_prefix(c)) {
-            components.next()
-        } else {
-            None
-        };
+    let mut drive: Option<&str> = if rooted && components.peek().is_some_and(|c| is_drive_prefix(c))
+    {
+        components.next()
+    } else {
+        None
+    };
 
     let mut out: Vec<&str> = Vec::new();
     for comp in components {
