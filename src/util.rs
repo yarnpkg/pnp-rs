@@ -85,61 +85,80 @@ fn to_portable_path<'a>(str: &'a str) -> Cow<'a, str> {
     Cow::Borrowed(str)
 }
 
+#[cfg(windows)]
+fn is_drive_prefix(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
+}
+#[cfg(not(windows))]
+fn is_drive_prefix(_: &str) -> bool {
+    false
+}
+
 pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
     let original_str = to_portable_path(original.as_ref());
 
-    let check_str_root = original_str.strip_prefix('/');
-    let str_minus_root = check_str_root.unwrap_or(original_str.as_ref());
+    let rooted = original_str.starts_with('/');
+    let body = original_str.strip_prefix('/').unwrap_or(&original_str);
 
-    let components = str_minus_root.split(&['/', '\\'][..]);
+    let mut components = body.split(['/', '\\']).peekable();
+
+    // A leading drive prefix (`C:`, `D:`, …) is treated as part of the root,
+    // so `..` overshoot can't pop the drive letter and leave a rootless path
+    // that downstream consumers misread as drive-relative. See #9.
+    let mut drive: Option<&str> = if rooted && components.peek().is_some_and(|c| is_drive_prefix(c))
+    {
+        components.next()
+    } else {
+        None
+    };
 
     let mut out: Vec<&str> = Vec::new();
-
     for comp in components {
+        // A mid-path drive prefix replaces the current root, matching Windows
+        // semantics where `D:\foo\..\..\C:\bar` resolves to `C:\bar`.
+        if drive.is_some() && is_drive_prefix(comp) {
+            out.clear();
+            drive = Some(comp);
+            continue;
+        }
+
         match comp {
-            "" | "." => {
-                // Those components don't progress the path
-            }
-
+            "" | "." => {}
             ".." => match out.last() {
-                None if check_str_root.is_some() => {
-                    // No need to add a ".." since we're already at the root
-                }
-
-                Some(&"..") | None => {
-                    out.push(comp);
-                }
-
+                None if rooted => { /* clamp at root */ }
+                Some(&"..") | None => out.push(comp),
                 Some(_) => {
                     out.pop();
                 }
             },
-
-            comp => out.push(comp),
+            c => out.push(c),
         }
     }
 
-    if check_str_root.is_some() {
-        if out.is_empty() {
-            return "/".to_string();
-        } else {
-            out.insert(0, "");
-        }
+    let mut result = String::new();
+    if rooted {
+        result.push('/');
     }
+    if let Some(d) = drive {
+        // Always emit the slash after the drive — `C:\..` is `C:\` (drive
+        // root), not `C:` (drive-relative).
+        result.push_str(d);
+        result.push('/');
+    }
+    result.push_str(&out.join("/"));
 
-    let mut str = out.join("/");
-
-    if out.is_empty() {
+    if result.is_empty() {
         return ".".to_string();
     }
 
     if (original_str.ends_with('/') || original_str.ends_with(MAIN_SEPARATOR_STR))
-        && !str.ends_with('/')
+        && !result.ends_with('/')
     {
-        str.push('/');
+        result.push('/');
     }
 
-    from_portable_path(&str).into_owned()
+    from_portable_path(&result).into_owned()
 }
 
 #[cfg(test)]
@@ -180,6 +199,20 @@ mod tests {
             normalize_path("\\\\server-name\\foo\\..\\..\\..\\C:\\bar\\test"),
             "C:/bar/test"
         );
+
+        // Drive root is the floor — `..` past it must clamp, not consume the drive.
+        // Repro for https://github.com/yarnpkg/pnp-rs/issues/9 (same-drive overshoot).
+        #[cfg(windows)]
+        assert_eq!(
+            normalize_path("C:\\dev\\project\\..\\..\\..\\Users\\USERNAME\\foo"),
+            "C:/Users/USERNAME/foo"
+        );
+        #[cfg(windows)]
+        assert_eq!(normalize_path("C:\\.."), "C:/");
+        #[cfg(windows)]
+        assert_eq!(normalize_path("C:\\foo\\..\\..\\.."), "C:/");
+        #[cfg(windows)]
+        assert_eq!(normalize_path("C:/dev/project/../../Users/USERNAME"), "C:/Users/USERNAME");
     }
 }
 
