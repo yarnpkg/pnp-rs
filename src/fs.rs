@@ -198,6 +198,28 @@ fn is_portable_drive_root(segment: &str) -> bool {
     bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
+fn base_path_from_items(
+    base_items: &[&str],
+    normalized_path: &str,
+    normalized_relative_path: &str,
+) -> String {
+    let mut base_path = base_items.join("/");
+
+    // Don't forget to add back the leading slash we removed earlier
+    if normalized_relative_path != normalized_path {
+        base_path.insert(0, '/');
+    }
+
+    if cfg!(windows)
+        && base_items.len() == 1
+        && base_items.first().is_some_and(|segment| is_portable_drive_root(segment))
+    {
+        base_path.push('/');
+    }
+
+    base_path
+}
+
 fn vpath(p: &Path) -> std::io::Result<VPath> {
     let Some(p_str) = p.as_os_str().to_str() else {
         return Ok(VPath::Native(p.to_path_buf()));
@@ -245,11 +267,11 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
 
                 // We extract the backward segments from the base ones
                 if let Ok(depth) = depth {
+                    let has_drive_root =
+                        base_items.first().is_some_and(|segment| is_portable_drive_root(segment));
                     let min_root_len = usize::from(
-                        normalized_relative_path != normalized_path
-                            && base_items
-                                .first()
-                                .is_some_and(|segment| is_portable_drive_root(segment)),
+                        has_drive_root
+                            && (normalized_relative_path != normalized_path || cfg!(windows)),
                     );
                     let split_at = base_items.len().saturating_sub(depth).max(min_root_len);
                     let parent_segments = base_items.split_off(split_at);
@@ -288,12 +310,8 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
     };
 
     if let Some(zip_segments) = zip_items {
-        let mut base_path = base_items.join("/");
-
-        // Don't forget to add back the leading slash we removed earlier
-        if normalized_relative_path != normalized_path {
-            base_path.insert(0, '/');
-        }
+        let base_path =
+            base_path_from_items(&base_items, &normalized_path, normalized_relative_path);
 
         if !zip_segments.is_empty() {
             return Ok(VPath::Zip(ZipInfo {
@@ -305,12 +323,8 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
     }
 
     if let Some(virtual_segments) = virtual_segments {
-        let mut base_path = base_items.join("/");
-
-        // Don't forget to add back the leading slash we removed earlier
-        if normalized_relative_path != normalized_path {
-            base_path.insert(0, '/');
-        }
+        let base_path =
+            base_path_from_items(&base_items, &normalized_path, normalized_relative_path);
 
         return Ok(VPath::Virtual(VirtualInfo { base_path, virtual_segments }));
     }
@@ -461,7 +475,7 @@ mod tests {
         zip_path: "bar".into(),
     })))]
     #[case("/C:/app/.yarn/__virtual__/pkg-virtual/4/Users/name/.yarn/cache/pkg.zip/node_modules/pkg/index.js", Some(VPath::Zip(ZipInfo {
-        base_path: "/C:".into(),
+        base_path: util::normalize_path("/C:"),
         virtual_segments: Some(("app/.yarn/__virtual__/pkg-virtual/4/Users/name/.yarn/cache/pkg.zip".into(), "Users/name/.yarn/cache/pkg.zip".into())),
         zip_path: "node_modules/pkg/index.js".into(),
     })))]
