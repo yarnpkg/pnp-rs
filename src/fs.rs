@@ -193,6 +193,11 @@ where
     }
 }
 
+fn is_portable_drive_root(segment: &str) -> bool {
+    let bytes = segment.as_bytes();
+    bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
 fn vpath(p: &Path) -> std::io::Result<VPath> {
     let Some(p_str) = p.as_os_str().to_str() else {
         return Ok(VPath::Native(p.to_path_buf()));
@@ -240,8 +245,14 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
 
                 // We extract the backward segments from the base ones
                 if let Ok(depth) = depth {
-                    let parent_segments =
-                        base_items.split_off(base_items.len().saturating_sub(depth));
+                    let min_root_len = usize::from(
+                        normalized_relative_path != normalized_path
+                            && base_items
+                                .first()
+                                .is_some_and(|segment| is_portable_drive_root(segment)),
+                    );
+                    let split_at = base_items.len().saturating_sub(depth).max(min_root_len);
+                    let parent_segments = base_items.split_off(split_at);
 
                     acc_segments.splice(0..0, parent_segments);
                 }
@@ -448,6 +459,11 @@ mod tests {
         base_path: "/".into(),
         virtual_segments: Some(("__virtual__/foo-abcdef/2/c/foo.zip".into(), "c/foo.zip".into())),
         zip_path: "bar".into(),
+    })))]
+    #[case("/C:/app/.yarn/__virtual__/pkg-virtual/4/Users/name/.yarn/cache/pkg.zip/node_modules/pkg/index.js", Some(VPath::Zip(ZipInfo {
+        base_path: "/C:".into(),
+        virtual_segments: Some(("app/.yarn/__virtual__/pkg-virtual/4/Users/name/.yarn/cache/pkg.zip".into(), "Users/name/.yarn/cache/pkg.zip".into())),
+        zip_path: "node_modules/pkg/index.js".into(),
     })))]
     #[case("./a/b/c/.zip", None)]
     #[case("./a/b/c/foo.zipp", None)]
