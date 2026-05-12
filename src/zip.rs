@@ -97,16 +97,10 @@ where
     pub fn read_to_string(&self, p: &str) -> Result<String, std::io::Error> {
         let data = self.read(p)?;
 
-        Ok(io_bytes_to_str(data.as_slice())?.to_string())
+        String::from_utf8(data).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "File did not contain valid UTF-8")
+        })
     }
-}
-
-fn io_bytes_to_str(vec: &[u8]) -> Result<&str, std::io::Error> {
-    std::str::from_utf8(vec).map_err(|_| make_io_utf8_error())
-}
-
-fn make_io_utf8_error() -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::InvalidData, "File did not contain valid UTF-8")
 }
 
 pub fn list_zip_entries(data: &[u8]) -> Result<FxHashMap<String, Option<Entry>>, Box<dyn Error>> {

@@ -69,6 +69,10 @@ fn parse_global_package_name(specifier: &str) -> Option<(String, Option<String>)
     Some((package_name, subpath))
 }
 
+fn via_suffix(ident: &str, specifier: &str) -> String {
+    if ident != specifier { format!(" (via \"{specifier}\")") } else { String::new() }
+}
+
 pub fn parse_bare_identifier(specifier: &str) -> Result<(String, Option<String>), Error> {
     let name = if specifier.starts_with('@') {
         parse_scoped_package_name(specifier)
@@ -277,11 +281,7 @@ pub fn resolve_to_unqualified_via_manifest(
                     format!(
                         "Your application tried to access {dependency_name}. While this module is usually interpreted as a Node builtin, your resolver is running inside a non-Node resolution context where such builtins are ignored. Since {dependency_name} isn't otherwise declared in your dependencies, this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: ${issuer_path}",
                         dependency_name = &ident,
-                        via = if ident != specifier {
-                            format!(" (via \"{specifier}\")")
-                        } else {
-                            String::new()
-                        },
+                        via = via_suffix(&ident, specifier),
                         issuer_path = parent.to_string_lossy(),
                     )
                 } else {
@@ -289,11 +289,7 @@ pub fn resolve_to_unqualified_via_manifest(
                         "${issuer_locator_name} tried to access {dependency_name}. While this module is usually interpreted as a Node builtin, your resolver is running inside a non-Node resolution context where such builtins are ignored. Since {dependency_name} isn't otherwise declared in ${issuer_locator_name}'s dependencies, this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: ${issuer_path}",
                         issuer_locator_name = &parent_locator.name,
                         dependency_name = &ident,
-                        via = if ident != specifier {
-                            format!(" (via \"{specifier}\")")
-                        } else {
-                            String::new()
-                        },
+                        via = via_suffix(&ident, specifier),
                         issuer_path = parent.to_string_lossy(),
                     )
                 }
@@ -301,11 +297,7 @@ pub fn resolve_to_unqualified_via_manifest(
                 format!(
                     "Your application tried to access {dependency_name}, but it isn't declared in your dependencies; this makes the require call ambiguous and unsound.\n\nRequired package: {dependency_name}{via}\nRequired by: {issuer_path}",
                     dependency_name = &ident,
-                    via = if ident != specifier {
-                        format!(" (via \"{}\")", &specifier)
-                    } else {
-                        String::from("")
-                    },
+                    via = via_suffix(&ident, specifier),
                     issuer_path = parent.to_string_lossy(),
                 )
             } else {
@@ -314,11 +306,7 @@ pub fn resolve_to_unqualified_via_manifest(
                     issuer_locator_name = &parent_locator.name,
                     issuer_locator_reference = &parent_locator.reference,
                     dependency_name = &ident,
-                    via = if ident != specifier {
-                        format!(" (via \"{}\")", &specifier)
-                    } else {
-                        String::from("")
-                    },
+                    via = via_suffix(&ident, specifier),
                     issuer_path = parent.to_string_lossy(),
                 )
             };
@@ -350,11 +338,7 @@ pub fn resolve_to_unqualified_via_manifest(
                 format!(
                     "Your application tried to access {dependency_name} (a peer dependency); this isn't allowed as there is no ancestor to satisfy the requirement. Use a devDependency if needed.\n\nRequired package: {dependency_name}{via}\nRequired by: {issuer_path}",
                     dependency_name = &ident,
-                    via = if ident != specifier {
-                        format!(" (via \"{}\")", &specifier)
-                    } else {
-                        String::from("")
-                    },
+                    via = via_suffix(&ident, specifier),
                     issuer_path = parent.to_string_lossy(),
                 )
             } else if !broken_ancestors.is_empty()
@@ -365,11 +349,7 @@ pub fn resolve_to_unqualified_via_manifest(
                     issuer_locator_name = &parent_locator.name,
                     issuer_locator_reference = &parent_locator.reference,
                     dependency_name = &ident,
-                    via = if ident != specifier {
-                        format!(" (via \"{}\")", &specifier)
-                    } else {
-                        String::from("")
-                    },
+                    via = via_suffix(&ident, specifier),
                     issuer_path = parent.to_string_lossy(),
                 )
             } else {
@@ -378,11 +358,7 @@ pub fn resolve_to_unqualified_via_manifest(
                     issuer_locator_name = &parent_locator.name,
                     issuer_locator_reference = &parent_locator.reference,
                     dependency_name = &ident,
-                    via = if ident != specifier {
-                        format!(" (via \"{}\")", &specifier)
-                    } else {
-                        String::from("")
-                    },
+                    via = via_suffix(&ident, specifier),
                     issuer_path = parent.to_string_lossy(),
                 )
             };

@@ -85,14 +85,9 @@ fn to_portable_path<'a>(str: &'a str) -> Cow<'a, str> {
     Cow::Borrowed(str)
 }
 
-#[cfg(windows)]
-fn is_drive_prefix(s: &str) -> bool {
+pub(crate) fn is_drive_prefix(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
-}
-#[cfg(not(windows))]
-fn is_drive_prefix(_: &str) -> bool {
-    false
 }
 
 pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
@@ -106,12 +101,13 @@ pub fn normalize_path<P: AsRef<str>>(original: P) -> String {
     // A leading drive prefix (`C:`, `D:`, …) is treated as part of the root,
     // so `..` overshoot can't pop the drive letter and leave a rootless path
     // that downstream consumers misread as drive-relative. See #9.
-    let mut drive: Option<&str> = if rooted && components.peek().is_some_and(|c| is_drive_prefix(c))
-    {
-        components.next()
-    } else {
-        None
-    };
+    // Only gated on Windows: on Unix, segments like `C:` are ordinary names.
+    let mut drive: Option<&str> =
+        if cfg!(windows) && rooted && components.peek().is_some_and(|c| is_drive_prefix(c)) {
+            components.next()
+        } else {
+            None
+        };
 
     let mut out: Vec<&str> = Vec::new();
     for comp in components {

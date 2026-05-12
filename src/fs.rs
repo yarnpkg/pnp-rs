@@ -4,6 +4,7 @@ use std::{
     str::Utf8Error,
 };
 
+use crate::util::is_drive_prefix;
 use crate::zip::Zip;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -193,11 +194,6 @@ where
     }
 }
 
-fn is_portable_drive_root(segment: &str) -> bool {
-    let bytes = segment.as_bytes();
-    bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
-}
-
 fn base_path_from_items(
     base_items: &[&str],
     normalized_path: &str,
@@ -212,7 +208,7 @@ fn base_path_from_items(
 
     if cfg!(windows)
         && base_items.len() == 1
-        && base_items.first().is_some_and(|segment| is_portable_drive_root(segment))
+        && base_items.first().is_some_and(|segment| is_drive_prefix(segment))
     {
         base_path.push('/');
     }
@@ -268,7 +264,7 @@ fn vpath(p: &Path) -> std::io::Result<VPath> {
                 // We extract the backward segments from the base ones
                 if let Ok(depth) = depth {
                     let has_drive_root =
-                        base_items.first().is_some_and(|segment| is_portable_drive_root(segment));
+                        base_items.first().is_some_and(|segment| is_drive_prefix(segment));
                     let min_root_len = usize::from(
                         has_drive_root
                             && (normalized_relative_path != normalized_path || cfg!(windows)),
