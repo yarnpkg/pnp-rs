@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.10](https://github.com/yarnpkg/pnp-rs/compare/v0.12.9...v0.12.10) - 2026-06-17
+
+### Other
+
+- replace fancy-regex with regress ([#108](https://github.com/yarnpkg/pnp-rs/pull/108))
+
 ## [0.12.9](https://github.com/yarnpkg/pnp-rs/compare/v0.12.8...v0.12.9) - 2026-05-12
 
 ### Fixed
