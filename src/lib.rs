@@ -11,7 +11,7 @@ use std::{
     sync::OnceLock,
 };
 
-use fancy_regex::Regex;
+use regress::Regex;
 
 pub use crate::{
     error::{
@@ -110,21 +110,20 @@ pub fn load_pnp_manifest(p: &Path) -> Result<Manifest, Error> {
 
     static RE: OnceLock<Regex> = OnceLock::new();
 
-    let manifest_match =
-        RE.get_or_init(|| {
+    let manifest_match = RE
+        .get_or_init(|| {
             Regex::new(
-                "(const[ \\r\\n]+RAW_RUNTIME_STATE[ \\r\\n]*=[ \\r\\n]*|hydrateRuntimeState\\(JSON\\.parse\\()'"
+                r"(const[ \r\n]+RAW_RUNTIME_STATE[ \r\n]*=[ \r\n]*|hydrateRuntimeState\(JSON\.parse\()'",
             )
             .unwrap()
         })
         .find(&manifest_content)
-        .unwrap_or_default()
         .ok_or_else(|| Error::FailedManifestHydration(Box::new(FailedManifestHydration {
             message: String::from("We failed to locate the PnP data payload inside its manifest file. Did you manually edit the file?"),
             manifest_path: p.to_path_buf(),
         })))?;
 
-    let iter = manifest_content.chars().skip(manifest_match.end());
+    let iter = manifest_content.chars().skip(manifest_match.range().end);
     let mut json_string = String::default();
     let mut escaped = false;
 
@@ -206,7 +205,7 @@ pub fn find_locator<'a>(manifest: &'a Manifest, path: &Path) -> Option<&'a Packa
     });
 
     if let Some(regex) = &manifest.ignore_pattern_data {
-        if regex.0.is_match(&util::normalize_path(rel_path.to_string_lossy())).unwrap() {
+        if regex.0.find(&util::normalize_path(rel_path.to_string_lossy())).is_some() {
             return None;
         }
     }
