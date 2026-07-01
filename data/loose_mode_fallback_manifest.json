@@ -1,0 +1,31 @@
+{
+  "dependencyTreeRoots": [],
+  "enableTopLevelFallback": true,
+  "ignorePatternData": null,
+  "fallbackExclusionList": [],
+  "fallbackPool": [["dep", "npm:0.11.0"]],
+  "packageRegistryData": [
+    [null, [
+      [null, {
+        "packageLocation": "./",
+        "packageDependencies": [["dep", "npm:1.4.0"]]
+      }]
+    ]],
+    ["issuer", [
+      ["npm:1.0.0", {
+        "packageLocation": "./cache/issuer/",
+        "packageDependencies": []
+      }]
+    ]],
+    ["dep", [
+      ["npm:1.4.0", {
+        "packageLocation": "./cache/dep-1.4.0/",
+        "packageDependencies": []
+      }],
+      ["npm:0.11.0", {
+        "packageLocation": "./cache/dep-0.11.0/",
+        "packageDependencies": []
+      }]
+    ]]
+  ]
+}

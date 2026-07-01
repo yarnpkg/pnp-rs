@@ -139,6 +139,37 @@ mod tests {
         }
     }
 
+    /// Regression test for the loose-mode fallback bug:
+    /// `issuer` imports `dep` without declaring it, so it should resolve
+    /// to the top-level `dep@1.4.0`, not the `fallbackPool`'s `dep@0.11.0`.
+    #[test]
+    fn test_loose_mode_fallback_prefers_top_level_locator() {
+        let manifest_path =
+            std::env::current_dir().unwrap().join("data/loose_mode_fallback_manifest.json");
+        let mut manifest =
+            serde_json::from_str::<Manifest>(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        init_pnp_manifest(&mut manifest, &manifest_path);
+
+        // `issuer` doesn't declare `dep`, triggering the loose-mode fallback.
+        let issuer = manifest_path.parent().unwrap().join("cache/issuer/index.js");
+        let resolution = resolve_to_unqualified_via_manifest(&manifest, "dep", &issuer).unwrap();
+
+        match resolution {
+            Resolution::Resolved(path, _) => {
+                let path = path.to_string_lossy();
+                assert!(
+                    path.contains("dep-1.4.0"),
+                    "expected fallback to resolve to the top-level version dep@1.4.0, got: {path}"
+                );
+                assert!(
+                    !path.contains("dep-0.11.0"),
+                    "fallback must not resolve to the fallback-pool copy dep@0.11.0, got: {path}"
+                );
+            }
+            other => panic!("Expected a resolved path, got: {other:?}"),
+        }
+    }
+
     #[test]
     fn test_parse_single_package_name() {
         let parsed = parse_bare_identifier("pkg");
