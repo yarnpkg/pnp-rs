@@ -240,23 +240,46 @@ fn try_get_package<'a>(
         .and_then(|references| references.get(&locator.reference))
 }
 
+enum DependencyResolution {
+    Undeclared,
+    UnfulfilledPeer,
+    Resolved(PackageDependency),
+}
+
+impl DependencyResolution {
+    fn from_manifest_entry(entry: Option<&Option<PackageDependency>>) -> Self {
+        match entry {
+            None => Self::Undeclared,
+            Some(None) => Self::UnfulfilledPeer,
+            Some(Some(binding)) => Self::Resolved(binding.clone()),
+        }
+    }
+}
+
 /// Resolves `ident` via the top-level fallback locator first (matching the
 /// reference runtime), only deferring to the deduplicated `fallbackPool` when
-/// the top-level package doesn't declare it. The nested `Option` distinguishes
-/// "no pool entry" from a `null` pool binding.
-fn resolve_via_fallback(manifest: &Manifest, ident: &str) -> Option<Option<PackageDependency>> {
+/// the top-level package doesn't provide a concrete binding. Null fallback
+/// entries are ignored, matching the reference runtime.
+fn resolve_via_fallback(manifest: &Manifest, ident: &str) -> DependencyResolution {
     // The top-level locator (`{name: null, reference: null}`) is stored with
     // empty string keys after deserialization.
     let top_level_locator = PackageLocator { name: String::new(), reference: String::new() };
 
     if let Some(top_level_pkg) = try_get_package(manifest, &top_level_locator) {
-        // `Some(None)` marks an unfulfilled peer; skip it and defer to the pool.
-        if let Some(Some(binding)) = top_level_pkg.package_dependencies.get(ident) {
-            return Some(Some(binding.clone()));
+        // An unfulfilled peer doesn't provide a binding; defer to the pool.
+        if let DependencyResolution::Resolved(binding) =
+            DependencyResolution::from_manifest_entry(top_level_pkg.package_dependencies.get(ident))
+        {
+            return DependencyResolution::Resolved(binding);
         }
     }
 
-    manifest.fallback_pool.get(ident).cloned()
+    match DependencyResolution::from_manifest_entry(manifest.fallback_pool.get(ident)) {
+        DependencyResolution::Resolved(binding) => DependencyResolution::Resolved(binding),
+        DependencyResolution::Undeclared | DependencyResolution::UnfulfilledPeer => {
+            DependencyResolution::Undeclared
+        }
+    }
 }
 
 pub fn is_excluded_from_fallback(manifest: &Manifest, locator: &PackageLocator) -> bool {
@@ -283,32 +306,27 @@ pub fn resolve_to_unqualified_via_manifest(
     if let Some(parent_locator) = find_locator(manifest, parent) {
         let parent_pkg = get_package(manifest, parent_locator)?;
 
-        let mut reference_or_alias: Option<PackageDependency> = None;
-        let mut is_set = false;
-
-        if !is_set {
-            if let Some(Some(binding)) = parent_pkg.package_dependencies.get(&ident) {
-                reference_or_alias = Some(binding.clone());
-                is_set = true;
-            }
-        }
+        let mut dependency_resolution =
+            DependencyResolution::from_manifest_entry(parent_pkg.package_dependencies.get(&ident));
 
         // The top-level package itself never uses fallbacks (matching the
         // reference runtime's `issuerLocator.name !== null` guard).
-        if !is_set
-            && !parent_locator.name.is_empty()
+        if matches!(
+            &dependency_resolution,
+            DependencyResolution::Undeclared | DependencyResolution::UnfulfilledPeer
+        ) && !parent_locator.name.is_empty()
             && manifest.enable_top_level_fallback
             && !is_excluded_from_fallback(manifest, parent_locator)
         {
             // Prefer the top-level fallback locator over the deduplicated pool
             // so duplicated deps match what Node's PnP loader resolves to.
-            if let Some(fallback_resolution) = resolve_via_fallback(manifest, &ident) {
-                reference_or_alias = fallback_resolution;
-                is_set = true;
+            if let DependencyResolution::Resolved(binding) = resolve_via_fallback(manifest, &ident)
+            {
+                dependency_resolution = DependencyResolution::Resolved(binding);
             }
         }
 
-        if !is_set {
+        if matches!(&dependency_resolution, DependencyResolution::Undeclared) {
             let message = if nodejs_built_in_modules::is_nodejs_builtin_module(specifier) {
                 if is_dependency_tree_root(manifest, parent_locator) {
                     format!(
@@ -352,6 +370,14 @@ pub fn resolve_to_unqualified_via_manifest(
                 issuer_path: parent.to_path_buf(),
             })));
         }
+
+        let reference_or_alias = match dependency_resolution {
+            DependencyResolution::Undeclared => {
+                unreachable!("undeclared dependencies return an error above")
+            }
+            DependencyResolution::Resolved(resolution) => Some(resolution),
+            DependencyResolution::UnfulfilledPeer => None,
+        };
 
         if let Some(resolution) = reference_or_alias {
             let dependency_pkg = match resolution {

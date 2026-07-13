@@ -24,7 +24,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ResolutionConfig, ResolutionHost, init_pnp_manifest, load_pnp_manifest,
+        Error, ResolutionConfig, ResolutionHost, init_pnp_manifest, load_pnp_manifest,
         parse_bare_identifier, resolve_to_unqualified, resolve_to_unqualified_via_manifest, util,
     };
 
@@ -167,6 +167,32 @@ mod tests {
                 );
             }
             other => panic!("Expected a resolved path, got: {other:?}"),
+        }
+
+        for dependency in ["undeclared", "null-fallback"] {
+            let resolution = resolve_to_unqualified_via_manifest(&manifest, dependency, &issuer);
+            match resolution {
+                Err(Error::UndeclaredDependency(_)) => {}
+                other => panic!("expected {dependency} to be undeclared, got {other:?}"),
+            }
+        }
+
+        let resolution =
+            resolve_to_unqualified_via_manifest(&manifest, "unfulfilled-no-fallback", &issuer);
+        match resolution {
+            Err(Error::MissingPeerDependency(_)) => {}
+            other => panic!("expected an unfulfilled peer error, got {other:?}"),
+        }
+
+        let resolution =
+            resolve_to_unqualified_via_manifest(&manifest, "pool-resolved", &issuer).unwrap();
+        match resolution {
+            Resolution::Resolved(path, _) => assert!(
+                path.to_string_lossy().contains("dep-0.11.0"),
+                "expected the pool alias to resolve, got {}",
+                path.display()
+            ),
+            other => panic!("expected the pool alias to resolve, got {other:?}"),
         }
     }
 

@@ -3,18 +3,28 @@
   "enableTopLevelFallback": true,
   "ignorePatternData": null,
   "fallbackExclusionList": [],
-  "fallbackPool": [["dep", "npm:0.11.0"]],
+  "fallbackPool": [
+    ["dep", "npm:0.11.0"],
+    ["null-fallback", null],
+    ["pool-resolved", ["dep", "npm:0.11.0"]]
+  ],
   "packageRegistryData": [
     [null, [
       [null, {
         "packageLocation": "./",
-        "packageDependencies": [["dep", "npm:1.4.0"]]
+        "packageDependencies": [
+          ["dep", "npm:1.4.0"],
+          ["pool-resolved", null]
+        ]
       }]
     ]],
     ["issuer", [
       ["npm:1.0.0", {
         "packageLocation": "./cache/issuer/",
-        "packageDependencies": []
+        "packageDependencies": [
+          ["unfulfilled-no-fallback", null],
+          ["pool-resolved", null]
+        ]
       }]
     ]],
     ["dep", [
