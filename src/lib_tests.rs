@@ -24,7 +24,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ResolutionConfig, ResolutionHost, init_pnp_manifest, load_pnp_manifest,
+        Error, ResolutionConfig, ResolutionHost, init_pnp_manifest, load_pnp_manifest,
         parse_bare_identifier, resolve_to_unqualified, resolve_to_unqualified_via_manifest, util,
     };
 
@@ -136,6 +136,63 @@ mod tests {
             _ => {
                 panic!("Unexpected resolve failed");
             }
+        }
+    }
+
+    /// Regression test for the loose-mode fallback bug:
+    /// `issuer` imports `dep` without declaring it, so it should resolve
+    /// to the top-level `dep@1.4.0`, not the `fallbackPool`'s `dep@0.11.0`.
+    #[test]
+    fn test_loose_mode_fallback_prefers_top_level_locator() {
+        let manifest_path =
+            std::env::current_dir().unwrap().join("data/loose_mode_fallback_manifest.json");
+        let mut manifest =
+            serde_json::from_str::<Manifest>(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        init_pnp_manifest(&mut manifest, &manifest_path);
+
+        // `issuer` doesn't declare `dep`, triggering the loose-mode fallback.
+        let issuer = manifest_path.parent().unwrap().join("cache/issuer/index.js");
+        let resolution = resolve_to_unqualified_via_manifest(&manifest, "dep", &issuer).unwrap();
+
+        match resolution {
+            Resolution::Resolved(path, _) => {
+                let path = path.to_string_lossy();
+                assert!(
+                    path.contains("dep-1.4.0"),
+                    "expected fallback to resolve to the top-level version dep@1.4.0, got: {path}"
+                );
+                assert!(
+                    !path.contains("dep-0.11.0"),
+                    "fallback must not resolve to the fallback-pool copy dep@0.11.0, got: {path}"
+                );
+            }
+            other => panic!("Expected a resolved path, got: {other:?}"),
+        }
+
+        for dependency in ["undeclared", "null-fallback"] {
+            let resolution = resolve_to_unqualified_via_manifest(&manifest, dependency, &issuer);
+            match resolution {
+                Err(Error::UndeclaredDependency(_)) => {}
+                other => panic!("expected {dependency} to be undeclared, got {other:?}"),
+            }
+        }
+
+        let resolution =
+            resolve_to_unqualified_via_manifest(&manifest, "unfulfilled-no-fallback", &issuer);
+        match resolution {
+            Err(Error::MissingPeerDependency(_)) => {}
+            other => panic!("expected an unfulfilled peer error, got {other:?}"),
+        }
+
+        let resolution =
+            resolve_to_unqualified_via_manifest(&manifest, "pool-resolved", &issuer).unwrap();
+        match resolution {
+            Resolution::Resolved(path, _) => assert!(
+                path.to_string_lossy().contains("dep-0.11.0"),
+                "expected the pool alias to resolve, got {}",
+                path.display()
+            ),
+            other => panic!("expected the pool alias to resolve, got {other:?}"),
         }
     }
 
