@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.11](https://github.com/yarnpkg/pnp-rs/compare/v0.12.10...v0.12.11) - 2026-07-22
+
+### Other
+
+- Fix loose mode fallback resolution ([#110](https://github.com/yarnpkg/pnp-rs/pull/110))
+
 ## [0.12.10](https://github.com/yarnpkg/pnp-rs/compare/v0.12.9...v0.12.10) - 2026-06-17
 
 ### Other
